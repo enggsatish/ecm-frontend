@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/*
+ * Servus Credit Union — ECM Platform
+ *
+ * Brand palette derived from Servus Credit Union brand identity:
+ *   Primary (navy): Servus deep navy #003057
+ *   Accent  (green): Servus green   #00A651
+ *
+ * primary-* = Servus navy scale (sidebar, headers, dark surfaces)
+ * accent-*  = Servus green scale (CTAs, active states, highlights)
+ */
+@theme {
+  /* ── Servus Navy (primary) ─────────────────────────────── */
+  --color-primary-50:  #e6eef5;
+  --color-primary-100: #ccdcea;
+  --color-primary-200: #99b9d5;
+  --color-primary-300: #6696c0;
+  --color-primary-400: #3373ab;
+  --color-primary-500: #005096;
+  --color-primary-600: #004080;
+  --color-primary-700: #003369;
+  --color-primary-800: #002652;
+  --color-primary-900: #003057;
+  --color-primary-950: #001428;
+
+  /* ── Servus Green (accent) ─────────────────────────────── */
+  --color-accent-50:   #e6f7ee;
+  --color-accent-100:  #ccefdd;
+  --color-accent-200:  #99dfbb;
+  --color-accent-300:  #66cf99;
+  --color-accent-400:  #33bf77;
+  --color-accent-500:  #00A651;
+  --color-accent-600:  #008a44;
+  --color-accent-700:  #006d36;
+  --color-accent-800:  #005128;
+  --color-accent-900:  #00341a;
+}
+
+body {
+  background-color: #f4f6f9;
+  color: #111827;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c9d4e0; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #a0aec0; }
+
+/* Servus feel — subtle animated underline on nav links */
+@keyframes slideIn {
+  from { transform: translateX(-8px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+.nav-enter { animation: slideIn 0.18s ease-out forwards; }

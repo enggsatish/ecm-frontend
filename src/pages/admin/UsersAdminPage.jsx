@@ -1,0 +1,276 @@
+import { useState } from 'react';
+import { Search, ChevronDown, ChevronUp, ShieldPlus, ShieldMinus, UserX, UserCheck, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import {
+  useUsers,
+  useAddRole,
+  useRemoveRole,
+  useDeactivateUser,
+  useReactivateUser,
+} from '../../hooks/useAdmin';
+import { useDepartments } from '../../hooks/useAdmin';
+
+const ALL_ROLES = ['ECM_ADMIN', 'ECM_DESIGNER', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_READONLY'];
+
+const ROLE_COLORS = {
+  ECM_ADMIN:      'bg-red-100 text-red-700',
+  ECM_DESIGNER:   'bg-purple-100 text-purple-700',
+  ECM_BACKOFFICE: 'bg-blue-100 text-blue-700',
+  ECM_REVIEWER:   'bg-amber-100 text-amber-700',
+  ECM_READONLY:   'bg-gray-100 text-gray-600',
+};
+
+function RoleBadge({ role, onRemove, removing }) {
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${ROLE_COLORS[role] ?? 'bg-gray-100 text-gray-600'}`}>
+      {role.replace('ECM_', '')}
+      <button
+        onClick={onRemove}
+        disabled={removing}
+        className="ml-0.5 hover:opacity-70 disabled:opacity-40"
+        title={`Remove ${role}`}
+      >
+        {removing ? <Loader2 size={10} className="animate-spin" /> : '×'}
+      </button>
+    </span>
+  );
+}
+
+function AddRoleDropdown({ userId, existingRoles }) {
+  const [open, setOpen] = useState(false);
+  const addRole = useAddRole();
+  const available = ALL_ROLES.filter(r => !existingRoles.includes(r));
+
+  if (!available.length) return null;
+
+  const handle = (role) => {
+    setOpen(false);
+    addRole.mutate({ id: userId, roleName: role }, {
+      onSuccess: () => toast.success(`Role ${role} added`),
+      onError: () => toast.error('Failed to add role'),
+    });
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        disabled={addRole.isPending}
+        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
+      >
+        <ShieldPlus size={12} /> Add role
+      </button>
+      {open && (
+        <div className="absolute left-0 top-6 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-40">
+          {available.map(r => (
+            <button
+              key={r}
+              onClick={() => handle(r)}
+              className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-gray-700"
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserRow({ user }) {
+  const [expanded, setExpanded] = useState(false);
+  const removeRole = useRemoveRole();
+  const deactivate = useDeactivateUser();
+  const reactivate = useReactivateUser();
+
+  const roles = user.roles ?? [];
+
+  const handleStatusToggle = () => {
+    const action = user.isActive ? deactivate : reactivate;
+    const msg = user.isActive ? 'User deactivated' : 'User reactivated';
+    action.mutate(user.id, {
+      onSuccess: () => toast.success(msg),
+      onError: () => toast.error('Action failed'),
+    });
+  };
+
+  return (
+    <>
+      <tr className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${!user.isActive ? 'opacity-60' : ''}`}>
+        <td className="px-4 py-3">
+          <button onClick={() => setExpanded(v => !v)} className="text-gray-400 hover:text-gray-600">
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </td>
+        <td className="px-4 py-3">
+          <div className="font-medium text-sm text-gray-900">{user.displayName ?? user.email}</div>
+          <div className="text-xs text-gray-500">{user.email}</div>
+        </td>
+        <td className="px-4 py-3 text-sm text-gray-600">{user.department?.name ?? '—'}</td>
+        <td className="px-4 py-3">
+          <div className="flex flex-wrap gap-1">
+            {roles.map(r => (
+              <RoleBadge
+                key={r}
+                role={r}
+                removing={removeRole.isPending}
+                onRemove={() => removeRole.mutate({ id: user.id, roleName: r }, {
+                  onSuccess: () => toast.success(`Role ${r} removed`),
+                  onError: () => toast.error('Failed to remove role'),
+                })}
+              />
+            ))}
+            <AddRoleDropdown userId={user.id} existingRoles={roles} />
+          </div>
+        </td>
+        <td className="px-4 py-3">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+            user.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'
+          }`}>
+            {user.isActive ? 'Active' : 'Inactive'}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          <button
+            onClick={handleStatusToggle}
+            disabled={deactivate.isPending || reactivate.isPending}
+            className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded transition-colors disabled:opacity-50 ${
+              user.isActive
+                ? 'text-red-600 hover:bg-red-50'
+                : 'text-green-600 hover:bg-green-50'
+            }`}
+          >
+            {user.isActive
+              ? <><UserX size={12} /> Deactivate</>
+              : <><UserCheck size={12} /> Reactivate</>
+            }
+          </button>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="bg-blue-50/40 border-b border-gray-100">
+          <td />
+          <td colSpan={5} className="px-4 py-3">
+            <div className="grid grid-cols-4 gap-4 text-xs">
+              <div><span className="text-gray-500">Sub Email</span><div className="font-medium text-gray-800 mt-0.5">{user.subEmail ?? '—'}</div></div>
+              <div><span className="text-gray-500">Provider</span><div className="font-medium text-gray-800 mt-0.5">{user.authProvider ?? '—'}</div></div>
+              <div><span className="text-gray-500">Last Login</span><div className="font-medium text-gray-800 mt-0.5">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '—'}</div></div>
+              <div><span className="text-gray-500">User ID</span><div className="font-mono text-gray-600 mt-0.5 truncate">{user.id}</div></div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+export default function UsersAdminPage() {
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [deptFilter, setDeptFilter] = useState('');
+  const [page, setPage] = useState(0);
+
+  const { data: depts } = useDepartments(true);
+  const { data, isLoading, isError } = useUsers({
+    search: search || undefined,
+    role: roleFilter || undefined,
+    isActive: statusFilter === '' ? undefined : statusFilter === 'active',
+    departmentId: deptFilter || undefined,
+    page,
+    size: 20,
+  });
+
+  const users = Array.isArray(data) ? data : (data?.content ?? []);
+  const totalPages = data?.totalPages ?? 1;
+
+  return (
+    <div className="p-6">
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-3 mb-5">
+        <div className="relative flex-1 min-w-56">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(0); }}
+            placeholder="Search name or email…"
+            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <select
+          value={roleFilter}
+          onChange={e => { setRoleFilter(e.target.value); setPage(0); }}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Roles</option>
+          {ALL_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => { setStatusFilter(e.target.value); setPage(0); }}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <select
+          value={deptFilter}
+          onChange={e => { setDeptFilter(e.target.value); setPage(0); }}
+          className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Departments</option>
+          {(depts ?? []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400">
+            <Loader2 size={20} className="animate-spin mr-2" /> Loading users…
+          </div>
+        ) : isError ? (
+          <div className="py-16 text-center text-red-500 text-sm">Failed to load users.</div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 w-8" />
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">User</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Department</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Roles</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.length === 0 ? (
+                <tr><td colSpan={6} className="py-12 text-center text-gray-400 text-sm">No users found.</td></tr>
+              ) : (
+                users.map(u => <UserRow key={u.id} user={u} />)
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 mt-4">
+          <button
+            disabled={page === 0}
+            onClick={() => setPage(p => p - 1)}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+          >Previous</button>
+          <span className="text-sm text-gray-600">Page {page + 1} of {totalPages}</span>
+          <button
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage(p => p + 1)}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+          >Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
