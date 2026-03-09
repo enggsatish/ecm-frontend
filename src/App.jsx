@@ -6,15 +6,6 @@ import { Toaster } from 'react-hot-toast'
 import { Suspense, lazy } from 'react'
 import { oktaAuth } from './utils/oktaConfig'
 
-// Temporary debug — remove after fix confirmed
-if (import.meta.env.DEV) {
-  window._debugOkta = () => {
-    console.log('Auth state:', oktaAuth.authStateManager.getAuthState())
-    console.log('Tokens:', oktaAuth.tokenManager.getTokensSync())
-  }
-  console.log('Run window._debugOkta() in console to inspect')
-}
-
 // ── Layout & Guards ──────────────────────────────────────────────────────────
 const AppLayout   = lazy(() => import('./components/layout/AppLayout'))
 const RequireAuth = lazy(() => import('./components/common/RequireAuth'))
@@ -47,6 +38,12 @@ const MySubmissionsPage    = lazy(() => import('./pages/eforms/MySubmissionsPage
 const ReviewQueuePage      = lazy(() => import('./pages/eforms/ReviewQueuePage'))
 const FormDesignerListPage = lazy(() => import('./pages/eforms/FormDesignerListPage'))
 const FormDesignerPage     = lazy(() => import('./pages/eforms/FormDesignerPage'))
+
+// -- Sprint 2 route addition (add to the protected routes section)
+const BackofficeQueuePage  = lazy(() => import('./pages/backoffice/BackofficeQueuePage'))
+const DocuSignSettingsPage = lazy(() => import('./pages/admin/DocuSignSettingsPage'))
+const NotificationPreferencesPage = lazy(() => import('./pages/admin/NotificationPreferencesPage'))
+
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -107,6 +104,13 @@ function AppRoutes() {
             {/* ── Core ──────────────────────────────────────────── */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
+            
+            <Route path="/backoffice/queue" element={
+              <RoleGuard roles={['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER']}>
+                <BackofficeQueuePage />
+              </RoleGuard>
+            } />
+
             <Route path="/workflow" element={
               <RoleGuard roles={['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER']}>
                 <WorkflowPage />
@@ -137,6 +141,8 @@ function AppRoutes() {
               <Route path="segments"      element={<SegmentsPage />} />
               <Route path="product-lines" element={<ProductLinesPage />} />
               <Route path="audit"         element={<AuditLogPage />} />
+              <Route path="integrations/docusign" element={<DocuSignSettingsPage />} />
+              <Route path="notifications" element={<NotificationPreferencesPage />} />
             </Route>
 
             {/* ── eForms: all authenticated users ───────────────── */}

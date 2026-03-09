@@ -7,139 +7,72 @@ import {
   PenLine, FileCheck, Inbox, ChevronDown,
   Users, FolderTree, Package, Archive, GitMerge,
   // Sprint-C additions
-  Layers, GitBranch, ShieldCheck,
+  Layers, GitBranch, ShieldCheck, Link2,
+  // Sprint-2 additions
+  Bell,
 } from 'lucide-react'
 import useUserStore from '../../store/userStore'
 
 // ─── eForms sub-nav items ─────────────────────────────────────────────────────
 const EFORMS_CHILDREN = [
-  {
-    path: '/eforms',
-    label: 'Overview',
-    icon: ClipboardList,
-    roles: null,
-    exact: true,
-  },
-  {
-    path: '/eforms/submissions/mine',
-    label: 'My Submissions',
-    icon: FileCheck,
-    roles: null,
-  },
+  { path: '/eforms', label: 'Overview', icon: ClipboardList, roles: null, exact: true },
+  { path: '/eforms/submissions/mine', label: 'My Submissions', icon: FileCheck, roles: null },
   {
     path: '/eforms/submissions/queue',
     label: 'Review Queue',
     icon: Inbox,
     roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER'],
   },
-  {
-    path: '/eforms/designer/list',
-    label: 'Form Designer',
-    icon: PenLine,
-    roles: ['ECM_ADMIN', 'ECM_DESIGNER'],
-  },
+  { path: '/eforms/designer/list', label: 'Form Designer', icon: PenLine, roles: ['ECM_ADMIN', 'ECM_DESIGNER'] },
 ]
 
-// ─── Admin sub-nav items ──────────────────────────────────────────────────────
 const ADMIN_CHILDREN = [
-  {
-    path: '/admin/users',
-    label: 'Users',
-    icon: Users,
-    roles: ['ECM_ADMIN'],
-  },
-  {
-    path: '/admin/departments',
-    label: 'Departments',
-    icon: Building2,
-    roles: ['ECM_ADMIN'],
-  },
-  {
-    path: '/admin/categories',
-    label: 'Categories',
-    icon: FolderTree,
-    roles: ['ECM_ADMIN'],
-  },
-  {
-    path: '/admin/products',
-    label: 'Products',
-    icon: Package,
-    roles: ['ECM_ADMIN'],
-  },
-  {
-    path: '/admin/retention',
-    label: 'Retention',
-    icon: Archive,
-    roles: ['ECM_ADMIN'],
-  },
-  {
-    path: '/admin/settings',
-    label: 'Settings',
-    icon: Settings,
-    roles: ['ECM_ADMIN'],
-  },
-  // ── Sprint-C additions ────────────────────────────────────────────────────
-  {
-    path: '/admin/segments',
-    label: 'Segments',
-    icon: Layers,
-    roles: ['ECM_ADMIN'],
-  },
-  {
-    path: '/admin/product-lines',
-    label: 'Product Lines',
-    icon: GitBranch,
-    roles: ['ECM_ADMIN'],
-  },
-  {
-    path: '/admin/audit',
-    label: 'Audit Log',
-    icon: ShieldCheck,
-    roles: ['ECM_ADMIN'],
-  },
+  { path: '/admin/users',         label: 'Users',         icon: Users,      roles: ['ECM_ADMIN'] },
+  { path: '/admin/departments',   label: 'Departments',   icon: Building2,  roles: ['ECM_ADMIN'] },
+  { path: '/admin/categories',    label: 'Categories',    icon: FolderTree, roles: ['ECM_ADMIN'] },
+  { path: '/admin/products',      label: 'Products',      icon: Package,    roles: ['ECM_ADMIN'] },
+  { path: '/admin/retention',     label: 'Retention',     icon: Archive,    roles: ['ECM_ADMIN'] },
+  { path: '/admin/settings',      label: 'Settings',      icon: Settings,   roles: ['ECM_ADMIN'] },
+  { path: '/admin/segments',      label: 'Segments',      icon: Layers,     roles: ['ECM_ADMIN'] },
+  { path: '/admin/product-lines', label: 'Product Lines', icon: GitBranch,  roles: ['ECM_ADMIN'] },
+  { path: '/admin/audit',         label: 'Audit Log',     icon: ShieldCheck, roles: ['ECM_ADMIN'] },
+  // ── Sprint 2: Integrations ────────────────────────────────────────────────
+  { path: '/admin/integrations/docusign', label: 'DocuSign',               icon: Link2, roles: ['ECM_ADMIN'] },
+  { path: '/admin/notifications',         label: 'Notification Prefs',      icon: Bell,  roles: ['ECM_ADMIN'] },
 ]
 
 // ─── Top-level nav ────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   {
-    path: '/dashboard',
-    icon: LayoutDashboard,
-    label: 'Dashboard',
+    path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard',
     roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_DESIGNER', 'ECM_READONLY'],
   },
   {
-    path: '/documents',
-    icon: FolderOpen,
-    label: 'Documents',
+    path: '/documents', icon: FolderOpen, label: 'Documents',
     roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_DESIGNER', 'ECM_READONLY'],
   },
   {
-    path: '/eforms',
-    icon: ClipboardList,
-    label: 'eForms',
-    isGroup: true,
-    groupKey: 'eforms',
+    path: '/eforms', icon: ClipboardList, label: 'eForms',
+    isGroup: true, groupKey: 'eforms',
     roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_DESIGNER', 'ECM_READONLY'],
     children: EFORMS_CHILDREN,
   },
+  // ── Sprint 2: Promoted backoffice queue ───────────────────────────────────
   {
-    path: '/workflow',
-    icon: CheckSquare,
-    label: 'My Tasks',
+    path: '/backoffice/queue', icon: Inbox, label: 'Review Queue',
     roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER'],
   },
   {
-    path: '/workflow/designer',
-    icon: GitMerge,
-    label: 'Workflow Designer',
+    path: '/workflow',       icon: CheckSquare, label: 'My Tasks',
+    roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER'],
+  },
+  {
+    path: '/workflow/designer', icon: GitMerge, label: 'Workflow Designer',
     roles: ['ECM_ADMIN', 'ECM_DESIGNER'],
   },
   {
-    path: '/admin',
-    icon: Settings,
-    label: 'Administration',
-    isGroup: true,
-    groupKey: 'admin',
+    path: '/admin', icon: Settings, label: 'Administration',
+    isGroup: true, groupKey: 'admin',
     roles: ['ECM_ADMIN'],
     children: ADMIN_CHILDREN,
   },

@@ -4,9 +4,19 @@
  *
  * Filterable, paginated audit log for ECM_ADMIN users.
  * Reads from GET /api/admin/audit via useAuditLog hook.
+ *
+ * Fix: payload column is PostgreSQL JSONB. Spring JDBC's queryForList returns
+ * it as a PGobject, which Jackson serialises to:
+ *   { type: "jsonb", value: "{\"outcome\":\"SUCCESS\"}", null: false }
+ * Rendering that object directly causes:
+ *   "Objects are not valid as a React child (found: object with keys {type, value, null})"
+ *
+ * parsePayload() unwraps the PGobject envelope and parses the inner JSON string.
+ * All other cell values are coerced to strings before rendering to prevent the
+ * same crash if other JDBC types (Timestamp, UUID) come through unexpectedly.
  */
 import { useState } from 'react'
-import { ClipboardList, Download, Search } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import { useAuditLog } from '../../hooks/useAdmin'
 
 const EVENTS = [
@@ -26,6 +36,70 @@ const RESOURCE_TYPES = [
   'SEGMENT', 'PRODUCT_LINE', 'TENANT_CONFIG',
 ]
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Unwrap the PostgreSQL PGobject envelope that Spring JDBC produces for JSONB columns.
+ *
+ * Spring JDBC queryForList() returns JSONB as a PGobject.
+ * Jackson serialises PGobject to: { type: "jsonb", value: "<json-string>", null: false }
+ *
+ * Three possible shapes to handle:
+ *   1. null / undefined             → return {}
+ *   2. PGobject envelope (object)   → extract .value string, then JSON.parse
+ *   3. Already a plain object/string → parse directly (shouldn't happen, but safe)
+ */
+function parsePayload(raw) {
+  if (raw == null) return {}
+
+  // Shape 2: PGobject envelope — { type: "jsonb", value: "{...}", null: false }
+  if (typeof raw === 'object' && 'value' in raw && 'type' in raw) {
+    try { return JSON.parse(raw.value) } catch { return {} }
+  }
+
+  // Shape 3a: plain JSON string
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) } catch { return { raw } }
+  }
+
+  // Shape 3b: already a plain object (Jackson fully deserialized it)
+  if (typeof raw === 'object') return raw
+
+  return {}
+}
+
+/**
+ * Safe string coercion for any JDBC value.
+ * Handles: string, number, Date/Timestamp (object with toISOString), null.
+ */
+function safeStr(val) {
+  if (val == null) return null
+  if (typeof val === 'string') return val
+  if (typeof val === 'number') return String(val)
+  if (typeof val === 'object' && typeof val.toISOString === 'function') return val.toISOString()
+  if (typeof val === 'object') return JSON.stringify(val)
+  return String(val)
+}
+
+/**
+ * Format a timestamp that may arrive as:
+ *  - ISO string   "2025-03-06T14:23:11.123Z"
+ *  - PGobject     { type: "timestamptz", value: "...", null: false }
+ *  - epoch millis (number)
+ */
+function formatDateTime(raw) {
+  if (raw == null) return '—'
+  // Unwrap PGobject if needed
+  const value = (typeof raw === 'object' && 'value' in raw) ? raw.value : raw
+  try {
+    const d = typeof value === 'number' ? new Date(value) : new Date(value)
+    if (isNaN(d.getTime())) return String(value)
+    return d.toLocaleString('en-CA', { hour12: false })
+  } catch {
+    return String(value)
+  }
+}
+
 function severityBadge(severity) {
   switch (severity) {
     case 'ERROR': return 'bg-red-50 text-red-600'
@@ -34,11 +108,15 @@ function severityBadge(severity) {
   }
 }
 
-function formatDateTime(value) {
-  if (!value) return '—'
-  try { return new Date(value).toLocaleString('en-CA', { hour12: false }) }
-  catch { return '—' }
+function outcomeBadge(outcome) {
+  switch (outcome) {
+    case 'SUCCESS': return 'text-green-600 font-medium'
+    case 'FAILURE': return 'text-red-500 font-medium'
+    default:        return 'text-gray-400'
+  }
 }
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AuditLogPage() {
   const [filters, setFilters] = useState({
@@ -47,11 +125,13 @@ export default function AuditLogPage() {
 
   const setFilter = (key, val) => setFilters(f => ({ ...f, [key]: val, page: 0 }))
 
-  const { data, isLoading } = useAuditLog(filters)
+  const { data, isLoading, isError } = useAuditLog(filters)
 
   const rows       = data?.content      ?? []
   const total      = data?.totalElements ?? 0
   const totalPages = data?.totalPages    ?? 0
+
+  const hasFilters = filters.event || filters.resourceType || filters.severity
 
   return (
     <div className="p-6 space-y-4 max-w-7xl">
@@ -66,12 +146,11 @@ export default function AuditLogPage() {
             Immutable record of all platform events
           </p>
         </div>
-        <div className="text-xs text-gray-400">{total.toLocaleString()} total records</div>
+        <div className="text-xs text-gray-400 tabular-nums">{total.toLocaleString()} total records</div>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Event */}
         <select
           value={filters.event}
           onChange={e => setFilter('event', e.target.value)}
@@ -81,7 +160,6 @@ export default function AuditLogPage() {
           {EVENTS.map(e => <option key={e} value={e}>{e}</option>)}
         </select>
 
-        {/* Resource type */}
         <select
           value={filters.resourceType}
           onChange={e => setFilter('resourceType', e.target.value)}
@@ -91,7 +169,6 @@ export default function AuditLogPage() {
           {RESOURCE_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
 
-        {/* Severity */}
         <select
           value={filters.severity}
           onChange={e => setFilter('severity', e.target.value)}
@@ -101,7 +178,6 @@ export default function AuditLogPage() {
           {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
-        {/* Page size */}
         <select
           value={filters.size}
           onChange={e => setFilters(f => ({ ...f, size: parseInt(e.target.value), page: 0 }))}
@@ -110,11 +186,11 @@ export default function AuditLogPage() {
           {[25, 50, 100].map(n => <option key={n} value={n}>{n} per page</option>)}
         </select>
 
-        {/* Reset */}
-        {(filters.event || filters.resourceType || filters.severity) && (
+        {hasFilters && (
           <button
             onClick={() => setFilters({ event: '', resourceType: '', severity: '', page: 0, size: 50 })}
-            className="text-xs text-blue-600 hover:underline">
+            className="text-xs text-blue-600 hover:underline"
+          >
             Reset filters
           </button>
         )}
@@ -123,78 +199,119 @@ export default function AuditLogPage() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[800px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Time', 'User', 'Event', 'Resource', 'Severity', 'IP', 'Details'].map(h => (
+                {['Time', 'User', 'Event', 'Resource', 'Outcome', 'Severity', 'IP', 'Error Detail'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+
               {isLoading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-gray-400">
                     Loading audit records…
                   </td>
                 </tr>
               )}
-              {!isLoading && rows.length === 0 && (
+
+              {isError && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">
-                    No audit records match the current filters
+                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-red-400">
+                    Failed to load audit records. Check that ecm-admin is running.
                   </td>
                 </tr>
               )}
-              {rows.map((row, i) => (
-                <tr key={row.id ?? i} className="hover:bg-gray-50 transition-colors">
 
-                  {/* Time */}
-                  <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap tabular-nums">
-                    {formatDateTime(row.created_at)}
+              {!isLoading && !isError && rows.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-gray-400">
+                    {hasFilters
+                      ? 'No records match the current filters.'
+                      : 'No audit records yet. They appear as users perform actions.'}
                   </td>
-
-                  {/* User */}
-                  <td className="px-4 py-2.5 text-xs text-gray-700 max-w-[140px] truncate"
-                    title={row.user_email ?? row.user_id}>
-                    {row.user_email ?? row.entra_object_id ?? '—'}
-                  </td>
-
-                  {/* Event */}
-                  <td className="px-4 py-2.5">
-                    <span className="text-xs font-mono bg-gray-100 text-gray-700 rounded px-1.5 py-0.5 whitespace-nowrap">
-                      {row.event_type}
-                    </span>
-                  </td>
-
-                  {/* Resource */}
-                  <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
-                    {row.resource_type}
-                    {row.resource_id ? (
-                      <span className="text-gray-400 ml-1">#{String(row.resource_id).substring(0, 8)}</span>
-                    ) : null}
-                  </td>
-
-                  {/* Severity */}
-                  <td className="px-4 py-2.5">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${severityBadge(row.severity)}`}>
-                      {row.severity ?? 'INFO'}
-                    </span>
-                  </td>
-
-                  {/* IP */}
-                  <td className="px-4 py-2.5 text-xs text-gray-400 font-mono whitespace-nowrap">
-                    {row.ip_address ?? '—'}
-                  </td>
-
-                  {/* Details */}
-                  <td className="px-4 py-2.5 text-xs text-gray-500 max-w-[220px] truncate"
-                    title={row.payload ? JSON.stringify(row.payload) : ''}>
-                    {row.payload ?? '—'}
-                  </td>
-
                 </tr>
-              ))}
+              )}
+
+              {rows.map((row, i) => {
+                // Parse the JSONB payload — handles PGobject envelope
+                const pl = parsePayload(row.payload)
+                const outcome = safeStr(pl.outcome)
+                const errorDetail = safeStr(pl.error)
+                const resourceId = safeStr(row.resource_id)
+                const userEmail = safeStr(row.user_email)
+                const entraId = safeStr(row.entra_object_id)
+                const eventType = safeStr(row.event_type)
+                const resourceType = safeStr(row.resource_type)
+                const severity = safeStr(row.severity)
+                const ip = safeStr(row.ip_address)
+
+                return (
+                  <tr key={row.id ?? i} className="hover:bg-gray-50 transition-colors">
+
+                    {/* Time */}
+                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap tabular-nums">
+                      {formatDateTime(row.created_at)}
+                    </td>
+
+                    {/* User */}
+                    <td
+                      className="px-4 py-2.5 text-xs text-gray-700 max-w-[140px] truncate"
+                      title={userEmail ?? entraId ?? ''}
+                    >
+                      {userEmail ?? entraId ?? '—'}
+                    </td>
+
+                    {/* Event */}
+                    <td className="px-4 py-2.5">
+                      <span className="text-xs font-mono bg-gray-100 text-gray-700 rounded px-1.5 py-0.5 whitespace-nowrap">
+                        {eventType ?? '—'}
+                      </span>
+                    </td>
+
+                    {/* Resource */}
+                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                      {resourceType ?? '—'}
+                      {resourceId
+                        ? <span className="text-gray-400 ml-1">#{resourceId.substring(0, 8)}</span>
+                        : null}
+                    </td>
+
+                    {/* Outcome — extracted from parsed payload */}
+                    <td className="px-4 py-2.5 text-xs">
+                      <span className={outcomeBadge(outcome)}>
+                        {outcome ?? '—'}
+                      </span>
+                    </td>
+
+                    {/* Severity */}
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${severityBadge(severity)}`}>
+                        {severity ?? 'INFO'}
+                      </span>
+                    </td>
+
+                    {/* IP */}
+                    <td className="px-4 py-2.5 text-xs text-gray-400 font-mono whitespace-nowrap">
+                      {ip ?? '—'}
+                    </td>
+
+                    {/* Error detail — only shown when payload.error is present */}
+                    <td
+                      className="px-4 py-2.5 text-xs max-w-[200px] truncate"
+                      title={errorDetail ?? ''}
+                    >
+                      {errorDetail
+                        ? <span className="text-red-400">{errorDetail}</span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+
+                  </tr>
+                )
+              })}
+
             </tbody>
           </table>
         </div>
@@ -206,7 +323,8 @@ export default function AuditLogPage() {
           <button
             disabled={filters.page === 0}
             onClick={() => setFilters(f => ({ ...f, page: f.page - 1 }))}
-            className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition-colors">
+            className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
             Previous
           </button>
           <span className="text-xs text-gray-500">
@@ -216,7 +334,8 @@ export default function AuditLogPage() {
           <button
             disabled={filters.page >= totalPages - 1}
             onClick={() => setFilters(f => ({ ...f, page: f.page + 1 }))}
-            className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition-colors">
+            className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
             Next
           </button>
         </div>

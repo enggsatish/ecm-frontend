@@ -155,6 +155,14 @@ export function useMySubmissions() {
   return useQuery({
     queryKey: eformsKeys.mySubmissions(),
     queryFn:  () => api.getMySubmissions(),
+    // Auto-poll every 30s when any submission is awaiting signature
+    refetchInterval: (query) => {
+      const data = query.state.data
+      const hasPending = Array.isArray(data) &&
+        data.some(s => s.status === 'PENDING_SIGNATURE')
+      return hasPending ? 30_000 : false
+    },
+    staleTime: 10_000,
   })
 }
 

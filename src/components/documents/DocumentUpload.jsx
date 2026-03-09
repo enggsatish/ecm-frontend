@@ -4,12 +4,16 @@
  * Sprint-C: Added Segment → Product Line cascading selects in the metadata panel.
  * The hierarchy is fetched from GET /api/admin/hierarchy.
  * On segment change, the product line dropdown resets.
- * segmentId, productLineId, segmentCode, productLineCode are all included in upload FormData.
+ * Sprint-D fix: restored partyExternalId selector (was dropped during Sprint-C hierarchy changes).
+ * Sprint-E refactor: replaced flat party <select> (eager-loaded all customers) with the shared
+ *   <PartySearch> widget (components/common/PartySearch). Now fetches lazily on keystroke.
+ *   partyExternalId sent to backend is unchanged — selectedParty?.externalId.
  */
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Upload, X, CheckCircle2, AlertCircle, Loader2, ChevronUp, ChevronDown, User, Package, Layers, GitBranch } from 'lucide-react'
+import { Upload, X, CheckCircle2, AlertCircle, Loader2, ChevronUp, ChevronDown, Layers, GitBranch, Building2 } from 'lucide-react'
 import { uploadDocuments } from '../../api/documentsApi'
 import { useHierarchy, useCategories } from '../../hooks/useAdmin'
+import PartySearch from '../common/PartySearch'
 import toast from 'react-hot-toast'
 
 const MAX_FILE_SIZE_MB = 50
@@ -77,12 +81,15 @@ export default function DocumentUpload({ onUploadComplete }) {
   const [showMeta,   setShowMeta]   = useState(false)
 
   // ── Hierarchy selects (Sprint-C) ──────────────────────────────────────────
-  const [segmentId,     setSegmentId]     = useState('')
-  const [productLineId, setProductLineId] = useState('')
-  const [categoryId,    setCategoryId]    = useState('')
-  const [docName,       setDocName]       = useState('')
+  const [segmentId,        setSegmentId]        = useState('')
+  const [productLineId,    setProductLineId]    = useState('')
+  const [categoryId,       setCategoryId]       = useState('')
+  const [docName,          setDocName]          = useState('')
+  // ── Party (Sprint-E: full party object instead of bare externalId string)
+  // selectedParty = PartyDto | null.  We extract .externalId when building uploadMeta.
+  const [selectedParty,    setSelectedParty]    = useState(null)
 
-  const { data: hierarchy = [] } = useHierarchy()
+  const { data: hierarchy = [] }     = useHierarchy()
   const { data: allCategories = [] } = useCategories(true)
 
   // Derived product lines for the currently selected segment
@@ -141,6 +148,7 @@ export default function DocumentUpload({ onUploadComplete }) {
       productLineId:   productLineId || undefined,
       segmentCode:     selectedSegment?.segmentCode || undefined,
       productLineCode: selectedPl?.code || undefined,
+      partyExternalId: selectedParty?.externalId || undefined,
     }
 
     let successCount = 0
@@ -232,7 +240,7 @@ export default function DocumentUpload({ onUploadComplete }) {
           className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
           <span className="font-medium">
             Document context
-            {(segmentId || categoryId) ? ' ✓' : ' (optional)'}
+            {(segmentId || categoryId || selectedParty) ? ' ✓' : ' (optional)'}
           </span>
           {showMeta ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -248,6 +256,22 @@ export default function DocumentUpload({ onUploadComplete }) {
                 onChange={e => setDocName(e.target.value)}
                 placeholder="Leave blank to use filename"
                 className={selectCls}
+              />
+            </div>
+
+            {/* ── Party (Sprint-E: shared PartySearch widget) ───────── */}
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 mb-2">
+                <Building2 size={12} /> Party / Customer
+              </label>
+              <PartySearch
+                value={selectedParty}
+                onChange={setSelectedParty}
+                size="compact"
+                autoSearch={true}
+                maxResults={10}
+                showHint={true}
+                placeholder="Type name or ID to search…"
               />
             </div>
 

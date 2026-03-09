@@ -51,6 +51,7 @@ export default function FormDesignerPage() {
 
   // Load existing definition when editing
   const { data: definition, isLoading } = useFormDefinition(isNew ? null : id);
+  const isPublished = definition?.status === 'PUBLISHED';
 
   const createMutation = useCreateFormDefinition();
   const updateMutation = useUpdateFormDefinition();
@@ -71,25 +72,38 @@ export default function FormDesignerPage() {
   // NOTE: backend DTOs use productTypeCode / formTypeCode (not productType / formType).
   // formKey is @NotBlank on the backend — auto-derive from name if designer left it blank.
   const buildPayload = () => {
-    const derivedFormKey =
-      meta.formKey ||
-      meta.name
-        .toLowerCase()
-        .replace(/\s+/g, '-')
-        .replace(/[^a-z0-9-]/g, '')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
+  const derivedFormKey =
+    meta.formKey ||
+    meta.name
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
 
-    return {
-      name:            meta.name,
-      description:     meta.description     || undefined,
-      formKey:         derivedFormKey        || undefined,
-      productTypeCode: meta.productType      || undefined,  // ← backend field name
-      formTypeCode:    meta.formType         || undefined,  // ← backend field name
-      tags:            meta.tags?.length ? meta.tags : undefined,
-      schema,
-    };
+  // Build workflowConfig only when a workflow key has been set.
+  // Sending null/empty workflowConfig tells the backend "no workflow attached".
+  const workflowConfig = meta.workflowKey
+    ? {
+        triggerOnSubmit:      meta.triggerOnSubmit,
+        workflowDefinitionKey: meta.workflowKey,     // Flowable processKey
+        assignToRole:          meta.assignToRole || undefined,
+        defaultPriority:       meta.priority || 'NORMAL',
+        slaDays:               meta.slaDays   || 5,
+      }
+    : null;
+
+  return {
+    name:            meta.name,
+    description:     meta.description     || undefined,
+    formKey:         derivedFormKey        || undefined,
+    productTypeCode: meta.productType      || undefined,
+    formTypeCode:    meta.formType         || undefined,
+    tags:            meta.tags?.length ? meta.tags : undefined,
+    schema,
+    workflowConfig,                                  // ← NEW
   };
+};
 
   // ── Save Draft ────────────────────────────────────────────────────────────
   const handleSave = () => {
@@ -219,25 +233,36 @@ export default function FormDesignerPage() {
         >
           <Settings className="w-3.5 h-3.5" /> Settings
         </button>
+        
+        {/* Handle clone vs save and publish button. */}
+        {isPublished ? (
+          <button
+            onClick={() => cloneNutation.mutate (id, {
+              onSuccess: (res) =>  navigate(`/eforms/designer/${res.data.id}`)
+            })}> Clone to Edit </button>
+        ) : (
+          <>
+          
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Save Draft
+          </button>
 
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-          Save Draft
-        </button>
-
-        <button
-          onClick={handlePublish}
-          disabled={publishMutation.isPending || isDirty || isNew}
-          title={isDirty ? 'Save first' : isNew ? 'Save as draft first' : 'Publish form'}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
-        >
-          {publishMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
-          Publish
-        </button>
+          <button
+            onClick={handlePublish}
+            disabled={publishMutation.isPending || isDirty || isNew}
+            title={isDirty ? 'Save first' : isNew ? 'Save as draft first' : 'Publish form'}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {publishMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+            Publish
+          </button>
+        </>
+        )}
       </div>
 
       {/* Three-panel body */}

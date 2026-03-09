@@ -2,17 +2,25 @@
  * FormRenderer.jsx
  * Full dynamic form renderer. Consumes a FormSchema and renders all sections/fields.
  * Implements the client-side rule engine on every change.
- * Used by FormFillPage and the designer's preview mode.
+ * Used by FormFillPage (step 1 – data collection) and the designer's preview mode.
  *
  * Props:
- *   schema       - FormSchema object from the API
- *   formKey      - String (for submit payload)
- *   definitionId - UUID
- *   readOnly     - boolean (for preview/view mode)
- *   onSubmitSuccess - callback after successful submit
+ *   schema          - FormSchema object from the API
+ *   formKey         - String (for submit payload)
+ *   definitionId    - UUID
+ *   readOnly        - boolean (for preview/view mode)
+ *   initialData     - initial form values (replaces old existingData)
+ *   submissionId    - UUID of existing submission (draft resume)
+ *   partyContext    - { partyId, partyExternalId, partyDisplayName } | {}
+ *   onReview        - (formData) => void — when provided, the primary action
+ *                     validates and hands data UP to the parent (no API call).
+ *                     Used by FormFillPage so step 2 can handle the final submit.
+ *   onSubmitSuccess - () => void — used only when FormRenderer submits directly
+ *                     (preview mode / standalone use).
+ *   onBack          - () => void — Back button handler
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertTriangle, Save, Send, Loader2 } from 'lucide-react';
+import { AlertTriangle, Save, Send, ArrowRight, Loader2 } from 'lucide-react';
 import FieldRenderer from './FieldRenderer';
 import { evaluateRules } from '../../../utils/ruleEngine';
 import { useSubmitForm } from '../../../hooks/useEForms';
@@ -22,24 +30,24 @@ export default function FormRenderer({
   formKey,
   definitionId,
   readOnly = false,
-  existingData = {},
+  initialData = {},
   submissionId = null,
-  onSubmitSuccess,
+  partyContext = {},
+  onReview        = null,   // step-based: hand validated data to parent for step 2
+  onSubmitSuccess = null,   // standalone: called after API success
+  onBack          = null,
 }) {
-  const [formData, setFormData] = useState(existingData || {});
+  const [formData, setFormData] = useState(initialData || {});
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const submitMutation = useSubmitForm();
 
-  // Run rule engine on every formData change
   const ruleResult = evaluateRules(schema, formData);
   const { hidden, required: dynRequired, blocking, computed } = ruleResult;
 
-  // Serialise computed values once per render so the effect dep is a stable string
   const computedJson = useMemo(() => JSON.stringify(computed), [computed]);
 
-  // Apply SET_VALUE computed fields when the rule engine produces new values
   useEffect(() => {
     const vals = JSON.parse(computedJson);
     if (Object.keys(vals).length > 0) {
@@ -64,7 +72,10 @@ export default function FormRenderer({
 
         const isReq = field.required || dynRequired.has(field.key);
         const val = formData[field.key];
-        const isEmpty = val == null || String(val).trim() === '' || (Array.isArray(val) && val.length === 0);
+        const isEmpty =
+          val == null ||
+          String(val).trim() === '' ||
+          (Array.isArray(val) && val.length === 0);
 
         if (isReq && isEmpty) {
           errors[field.key] = `${field.label || field.key} is required`;
@@ -80,8 +91,10 @@ export default function FormRenderer({
           }
           if (['TEXT_INPUT', 'TEXT_AREA'].includes(field.type)) {
             const s = String(val);
-            if (v.minLength != null && s.length < v.minLength) errors[field.key] = `Minimum ${v.minLength} characters`;
-            if (v.maxLength != null && s.length > v.maxLength) errors[field.key] = `Maximum ${v.maxLength} characters`;
+            if (v.minLength != null && s.length < v.minLength)
+              errors[field.key] = `Minimum ${v.minLength} characters`;
+            if (v.maxLength != null && s.length > v.maxLength)
+              errors[field.key] = `Maximum ${v.maxLength} characters`;
           }
           if (field.type === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
             errors[field.key] = 'Enter a valid email address';
@@ -93,19 +106,22 @@ export default function FormRenderer({
   };
 
   const handleSaveDraft = () => {
-    const payload = { formKey, submissionData: formData, draft: true };
-    if (submissionId) 
-      payload.existingSubmissionId = submissionId;
+    const payload = {
+      formKey,
+      submissionData: formData,
+      draft: true,
+      ...(partyContext?.partyExternalId && { partyExternalId: partyContext.partyExternalId }),
+      ...(submissionId && { existingSubmissionId: submissionId }),
+    };
     submitMutation.mutate(payload, { onSuccess: onSubmitSuccess });
-
-
-    // submitMutation.mutate(
-    //   { formKey, definitionId, data: formData, draft: true, id: submissionId },
-    //   { onSuccess: onSubmitSuccess }
-    // );
   };
 
-  const handleSubmit = () => {
+  /**
+   * Primary action handler.
+   * • onReview present → validate + call onReview(formData), NO API call (parent owns submit)
+   * • otherwise        → validate + submit to API + call onSubmitSuccess
+   */
+  const handlePrimaryAction = () => {
     setSubmitAttempted(true);
     const errors = validateAll();
     setFieldErrors(errors);
@@ -113,18 +129,25 @@ export default function FormRenderer({
     if (Object.keys(errors).length > 0) return;
     if (blocking.length > 0) return;
 
+    if (onReview) {
+      onReview(formData);
+      return;
+    }
+
     if (schema?.confirmOnSubmit) {
-      if (!window.confirm('Submit this form? You will not be able to edit it after submission.')) return;
+      if (!window.confirm('Submit this form? You will not be able to edit it after submission.'))
+        return;
     }
     submitMutation.mutate(
-      { formKey, submissionData: formData, draft: false },
+      {
+        formKey,
+        submissionData: formData,
+        draft: false,
+        ...(partyContext?.partyExternalId && { partyExternalId: partyContext.partyExternalId }),
+        ...(submissionId && { existingSubmissionId: submissionId }),
+      },
       { onSuccess: onSubmitSuccess }
     );
-
-    // submitMutation.mutate(
-    //   { formKey, definitionId, data: formData, draft: false, id: submissionId },
-    //   { onSuccess: onSubmitSuccess }
-    // );
   };
 
   if (!schema) {
@@ -135,6 +158,9 @@ export default function FormRenderer({
     );
   }
 
+  const primaryLabel = onReview ? 'Review & Submit' : (schema.submitButtonLabel || 'Submit');
+  const primaryIcon  = onReview ? <ArrowRight className="w-4 h-4" /> : <Send className="w-4 h-4" />;
+
   return (
     <div className="space-y-6">
       {/* Blocking messages */}
@@ -142,7 +168,7 @@ export default function FormRenderer({
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-amber-800">Cannot submit</p>
+            <p className="text-sm font-medium text-amber-800">Cannot proceed</p>
             <ul className="mt-1 text-sm text-amber-700 list-disc list-inside space-y-0.5">
               {blocking.map((msg, i) => <li key={i}>{msg}</li>)}
             </ul>
@@ -161,6 +187,9 @@ export default function FormRenderer({
             {section.title && (
               <div className="px-6 py-4 border-b border-gray-100">
                 <h3 className="text-base font-semibold text-gray-800">{section.title}</h3>
+                {section.description && (
+                  <p className="text-sm text-gray-500 mt-0.5">{section.description}</p>
+                )}
               </div>
             )}
             <div className="px-6 py-5">
@@ -189,9 +218,7 @@ export default function FormRenderer({
                       {field.helpText && !err && (
                         <p className="mt-1 text-xs text-gray-400">{field.helpText}</p>
                       )}
-                      {err && (
-                        <p className="mt-1 text-xs text-red-500">{err}</p>
-                      )}
+                      {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
                     </div>
                   );
                 })}
@@ -206,37 +233,56 @@ export default function FormRenderer({
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex gap-3">
           <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-red-700">Please fix the errors above before submitting</p>
+            <p className="text-sm font-medium text-red-700">
+              Please fix the {Object.keys(fieldErrors).length} error
+              {Object.keys(fieldErrors).length !== 1 ? 's' : ''} above before continuing
+            </p>
           </div>
         </div>
       )}
 
       {/* Actions */}
       {!readOnly && (
-        <div className="flex items-center justify-end gap-3 pt-2">
-          {schema.allowSaveDraft && (
-            <button
-              onClick={handleSaveDraft}
-              disabled={submitMutation.isPending}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 text-sm
-                         font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-            >
-              <Save className="w-4 h-4" />
-              Save Draft
-            </button>
-          )}
-          <button
-            onClick={handleSubmit}
-            disabled={submitMutation.isPending}
-            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white text-sm font-medium
-                       rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
-          >
-            {submitMutation.isPending ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
-            ) : (
-              <><Send className="w-4 h-4" /> {schema.submitButtonLabel || 'Submit'}</>
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <div>
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="px-4 py-2 border border-gray-300 text-gray-600 text-sm font-medium
+                           rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                ← Back
+              </button>
             )}
-          </button>
+          </div>
+          <div className="flex items-center gap-3">
+            {schema.allowSaveDraft && !onReview && (
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={submitMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 text-sm
+                           font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                <Save className="w-4 h-4" />
+                Save Draft
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handlePrimaryAction}
+              disabled={submitMutation.isPending}
+              className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white text-sm font-medium
+                         rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              {submitMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
+              ) : (
+                <>{primaryIcon} {primaryLabel}</>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -244,6 +290,12 @@ export default function FormRenderer({
 }
 
 function colSpanClass(span) {
-  const map = { 3: 'col-span-12 sm:col-span-3', 4: 'col-span-12 sm:col-span-4', 6: 'col-span-12 sm:col-span-6', 8: 'col-span-12 sm:col-span-8', 12: 'col-span-12' };
+  const map = {
+    3:  'col-span-12 sm:col-span-3',
+    4:  'col-span-12 sm:col-span-4',
+    6:  'col-span-12 sm:col-span-6',
+    8:  'col-span-12 sm:col-span-8',
+    12: 'col-span-12',
+  };
   return map[span] || 'col-span-12 sm:col-span-6';
 }

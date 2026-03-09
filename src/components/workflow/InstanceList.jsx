@@ -91,8 +91,8 @@ export default function InstanceList() {
   const [sort, setSort] = useState({ field: 'createdAt', dir: 'desc' })
 
   const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
-    queryKey: ['workflow', 'instances', { page, size: PAGE_SIZE }],
-    queryFn:  () => listWorkflowInstances({ page, size: PAGE_SIZE }),
+    queryKey: ['workflow', 'instances', { page, size: PAGE_SIZE, sort: sort.field, dir: sort.dir }],
+    queryFn:  () => listWorkflowInstances({ page, size: PAGE_SIZE, sort: sort.field, dir: sort.dir }),
     placeholderData: (prev) => prev,
     throwOnError: false,
   })

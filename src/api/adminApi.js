@@ -98,12 +98,7 @@ export const updateConfigKey = (key, payload) =>
 export const bulkUpdateConfig = (configs) =>
   api.put('/api/admin/config', { configs }).then(unwrap);
 
-// ══════════════════════════════════════════════════════════════════
-// Sprint-C additions: Hierarchy and Audit
-// ══════════════════════════════════════════════════════════════════
-
-// ── Hierarchy ──────────────────────────────────────────────────────────────
-
+// ── Hierarchy (Sprint-C) ───────────────────────────────────────────────────
 /**
  * GET /api/admin/hierarchy
  * Returns the full Segment → ProductLine → Product tree.
@@ -112,10 +107,7 @@ export const bulkUpdateConfig = (configs) =>
 export const getHierarchy = () =>
   api.get('/api/admin/hierarchy').then(unwrap);
 
-/**
- * GET /api/admin/segments
- * Returns all segments (including inactive) for admin management.
- */
+// ── Segments ───────────────────────────────────────────────────────────────
 export const getSegments = () =>
   api.get('/api/admin/segments').then(unwrap);
 
@@ -125,10 +117,7 @@ export const createSegment = (payload) =>
 export const updateSegment = (id, payload) =>
   api.put(`/api/admin/segments/${id}`, payload).then(unwrap);
 
-/**
- * GET /api/admin/product-lines
- * Optional segmentId filter to get lines for a specific segment.
- */
+// ── Product Lines ──────────────────────────────────────────────────────────
 export const getProductLines = (segmentId) =>
   api.get('/api/admin/product-lines', {
     params: segmentId ? { segmentId } : {},
@@ -141,11 +130,64 @@ export const updateProductLine = (id, payload) =>
   api.put(`/api/admin/product-lines/${id}`, payload).then(unwrap);
 
 // ── Audit Log ──────────────────────────────────────────────────────────────
-
-/**
- * GET /api/admin/audit
- * Params: userId, event, resourceType, severity, from, to, page, size
- * Returns paginated audit log records.
- */
 export const getAuditLog = (params) =>
   api.get('/api/admin/audit', { params }).then(unwrap);
+
+// ── Customers (Parties) — Sprint 1 ────────────────────────────────────────
+/**
+ * GET /api/admin/customers?q=&page=0&size=20
+ * Returns Spring Page: { content, totalElements, totalPages, ... }
+ */
+export const listCustomers = (params = {}) =>
+  api.get('/api/admin/customers', { params }).then(unwrap);
+
+export const getCustomer = (id) =>
+  api.get(`/api/admin/customers/${id}`).then(unwrap);
+
+/**
+ * POST /api/admin/customers
+ * { customerRef, displayName, segment, segmentId?, shortName?,
+ *   registrationNo?, notes?, email?, phone?, primaryProductId? }
+ */
+export const createCustomer = (payload) =>
+  api.post('/api/admin/customers', payload).then(unwrap);
+
+/**
+ * PUT /api/admin/customers/:id
+ * customerRef (external_id) is immutable — include it but backend ignores it on update.
+ */
+export const updateCustomer = (id, payload) =>
+  api.put(`/api/admin/customers/${id}`, payload).then(unwrap);
+
+/**
+ * DELETE /api/admin/customers/:id
+ * Soft-delete — sets is_active = false.
+ */
+export const deactivateCustomer = (id) =>
+  api.delete(`/api/admin/customers/${id}`).then(unwrap);
+// ── DocuSign Integration Config ────────────────────────────────────────────
+/**
+ * GET /api/admin/integrations/docusign
+ * Returns the current DocuSign config for the default tenant.
+ * Sensitive fields (rsaPrivateKey, webhookHmacSecret) are returned as
+ * '*** saved ***' once set — the backend never echoes raw secrets.
+ */
+export const getDocuSignConfig = () =>
+  api.get('/api/admin/integrations/docusign').then(unwrap);
+
+/**
+ * PUT /api/admin/integrations/docusign
+ * Save DocuSign configuration.  Fields that equal '*** saved ***' are
+ * treated as "no change" by the backend and the existing encrypted value
+ * is preserved.
+ */
+export const saveDocuSignConfig = (payload) =>
+  api.put('/api/admin/integrations/docusign', payload).then(unwrap);
+
+/**
+ * POST /api/admin/integrations/docusign/test
+ * Fires a live JWT-grant call to DocuSign and returns { success, message }.
+ * Only callable when enabled = true and credentials are saved.
+ */
+export const testDocuSignConnection = () =>
+  api.post('/api/admin/integrations/docusign/test').then(unwrap);

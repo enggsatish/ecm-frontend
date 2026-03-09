@@ -2,7 +2,8 @@ import axios from 'axios'
 import { oktaAuth } from '../utils/oktaConfig'
 
 const apiClient = axios.create({
-  baseURL: 'http://localhost:8080',
+  //baseURL: 'http://localhost:8080',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })

@@ -37,6 +37,13 @@ const PAGE_META = {
   '/admin/segments':               { title: 'Segments',          sub: 'Business segment hierarchy (Retail, Commercial, SMB)' },
   '/admin/product-lines':          { title: 'Product Lines',     sub: 'Product line classification within segments' },
   '/admin/audit':                  { title: 'Audit Log',         sub: 'System-wide audit trail and activity history' },
+
+  // ── Sprint-2 additions ────────────────────────────────────────────────────
+  '/admin/integrations/docusign':  { title: 'DocuSign Settings', sub: 'Configure DocuSign JWT grant integration' },
+  '/admin/notifications':          { title: 'Notification Preferences', sub: 'Manage alert and notification settings' },
+  '/backoffice/queue':             { title: 'Review Queue',      sub: 'Unassigned and in-progress review tasks' },
+  '/workflow/designer':            { title: 'Workflow Designer', sub: 'Design and publish workflow templates' },
+  '/eforms/fill':                  { title: 'Fill Form',         sub: 'Complete and submit an eForm' },
 }
 
 /**

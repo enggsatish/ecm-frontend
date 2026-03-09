@@ -12,6 +12,7 @@ import {
   getHierarchy, getSegments, createSegment, updateSegment,
   getProductLines, createProductLine, updateProductLine,
   getAuditLog,
+  listCustomers, getCustomer, createCustomer, updateCustomer, deactivateCustomer,
 } from '../api/adminApi';
 
 // ── Users ──────────────────────────────────────────────────────────────────
@@ -356,3 +357,90 @@ export const useAuditLog = (filters) =>
     queryFn: () => getAuditLog(filters),
     staleTime: 30_000,
   });
+
+// ── Customers (Parties) ────────────────────────────────────────────────────
+
+/**
+ * Lazy party type-ahead search — used by the shared PartySearch widget.
+ *
+ * Fires only when query has ≥ 2 characters (enforced via `enabled`).
+ * Results are cached for 30 s — repeated identical queries are free.
+ *
+ * @param {string} query       - search term (name / externalId / email)
+ * @param {number} maxResults  - page size sent to the backend (default 10)
+ *
+ * Returns a flat PartyDto[] by unwrapping the Spring Page<PartyDto> envelope:
+ *   { content: [...], totalElements: N }  →  [...]
+ *
+ * Note: does NOT use listCustomers() from adminApi — that function wraps params
+ * as a single object which maps poorly to the ?q= query param the search
+ * endpoint expects.  We call apiClient directly here for clarity.
+ */
+export const usePartySearch = (query, maxResults = 10) => {
+  return useQuery({
+    queryKey: ['party-search', query, maxResults],
+    queryFn:  () =>
+      import('../api/apiClient').then(({ default: apiClient }) =>
+        apiClient
+          .get('/api/admin/customers', { params: { q: query, size: maxResults } })
+          .then((r) => {
+            // apiClient interceptor already stripped ApiResponse<Page<PartyDto>>.
+            // r.data is now Page<PartyDto>: { content: [...], totalElements: N }
+            const payload = r.data;
+            return Array.isArray(payload) ? payload : (payload?.content ?? []);
+          })
+      ),
+    enabled:   typeof query === 'string' && query.trim().length >= 2,
+    staleTime: 30_000,
+  });
+};
+
+/**
+ * Paginated customer list.
+ * Params: { search, segment, isActive, page, size }
+ */
+export const useCustomers = (params) =>
+  useQuery({
+    queryKey: ['admin', 'customers', params],
+    queryFn:  () => listCustomers(params),
+    staleTime: 60_000,
+    keepPreviousData: true,
+  });
+
+export const useCustomer = (id) =>
+  useQuery({
+    queryKey: ['admin', 'customers', id],
+    queryFn:  () => getCustomer(id),
+    enabled:  id != null,
+    staleTime: 60_000,
+  });
+
+export const useCreateCustomer = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => createCustomer(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'customers'] });
+    },
+  });
+};
+
+export const useUpdateCustomer = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }) => updateCustomer(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'customers'] });
+    },
+  });
+};
+
+export const useDeactivateCustomer = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => deactivateCustomer(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'customers'] });
+    },
+  });
+};

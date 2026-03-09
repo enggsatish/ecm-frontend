@@ -4,20 +4,48 @@
  * Must stay in sync with backend to ensure consistent behaviour.
  *
  * Usage:
- *   const { hidden, required, blocking, computed } = evaluateRules(schema, formData);
- *   - hidden:   Set<string> of field keys (and '__section__<sectionId>' for sections)
- *   - required: Set<string> of field keys dynamically made required
- *   - blocking: string[]   of user-facing block messages
- *   - computed: Record<string, any> of SET_VALUE results
+ *   const { hidden, required, blocking, computed, disabled } = evaluateRules(schema, formData);
+ *   - hidden:   Set<string>   field keys (and '__section__<sectionId>' for sections)
+ *   - required: Set<string>   field keys dynamically made required
+ *   - disabled: Set<string>   field keys dynamically disabled  ← NEW (was missing)
+ *   - blocking: string[]      user-facing messages that block submission
+ *   - computed: Record<string, any>  SET_VALUE / COPY_FROM / CLEAR results
+ *
+ * ── Sync log (bugs fixed vs previous version) ────────────────────────────────
+ * 1. BETWEEN / DATE_BETWEEN: Java uses clause.valueTo as upper bound.
+ *    JS was wrongly reading ruleVal as [lo, hi] array — different DSL shapes.
+ *    Fixed: read clause.valueTo as the upper bound on both operators.
+ *
+ * 2. STARTS_WITH / ENDS_WITH: Java is case-sensitive (String.startsWith).
+ *    JS was calling .toLowerCase() on both sides — silent mismatch.
+ *    Fixed: removed toLowerCase() to match Java's behaviour.
+ *
+ * 3. Dynamic date expressions (TODAY, TODAY+N, TODAY-N):
+ *    Java parseDate() handles these. JS was passing them to new Date() which
+ *    returns Invalid Date.
+ *    Fixed: added parseRuleDate() helper matching Java's parseDate() logic.
+ *
+ * 4. DISABLE / ENABLE: Java tracks a disabledFields Set.
+ *    JS had no disabled tracking at all — actions fell to default no-op.
+ *    Fixed: added disabled Set, returned from evaluateRules().
+ *
+ * 5. CLEAR: Java sets computed[target] = null.
+ *    JS had no case — fell to default.
+ *    Fixed: explicit case added.
+ *
+ * 6. COPY_FROM: Java copies data[action.value] to computed[target].
+ *    JS had no case — fell to default.
+ *    Fixed: explicit case added.
  */
 
 export function evaluateRules(schema, formData) {
-  const hidden = new Set();
-  const required = new Set();
-  const blocking = [];
-  const computed = {};
+  const hidden    = new Set();
+  const required  = new Set();
+  const disabled  = new Set();   // ← was missing; Java tracks this
+  const blocking  = [];
+  const computed  = {};
 
-  if (!schema) return { hidden, required, blocking, computed };
+  if (!schema) return { hidden, required, disabled, blocking, computed };
 
   const allRules = [
     ...(schema.globalRules || []),
@@ -32,45 +60,80 @@ export function evaluateRules(schema, formData) {
     if (!actions) continue;
 
     for (const action of actions) {
-      switch (action.type) {
-        case 'HIDE':
-          hidden.add(action.target);
-          break;
-        case 'SHOW':
-          hidden.delete(action.target);
-          break;
-        case 'TOGGLE':
-          hidden.has(action.target)
-            ? hidden.delete(action.target)
-            : hidden.add(action.target);
-          break;
-        case 'REQUIRE':
-          required.add(action.target);
-          break;
-        case 'UNREQUIRE':
-          required.delete(action.target);
-          break;
-        case 'SET_VALUE':
-          computed[action.target] = action.value;
-          break;
-        case 'BLOCK_SUBMIT':
-          blocking.push(action.value);
-          break;
-        case 'HIDE_SECTION':
-          hidden.add('__section__' + action.target);
-          break;
-        case 'SHOW_SECTION':
-          hidden.delete('__section__' + action.target);
-          break;
-        // DISABLE / ENABLE / CLEAR / COPY_FROM / SHOW_MESSAGE handled in renderer
-        default:
-          break;
-      }
+      applyAction(action, formData, hidden, required, disabled, blocking, computed);
     }
   }
 
-  return { hidden, required, blocking, computed };
+  return { hidden, required, disabled, blocking, computed };
 }
+
+// ── Action application ────────────────────────────────────────────────────────
+// Kept as a separate function to mirror Java's applyActions() method structure.
+
+function applyAction(action, formData, hidden, required, disabled, blocking, computed) {
+  const t = action.target;
+  switch (action.type) {
+    // ── Visibility ──────────────────────────────────────────────────────────
+    case 'HIDE':
+      hidden.add(t);
+      break;
+    case 'SHOW':
+      hidden.delete(t);
+      break;
+    case 'TOGGLE':
+      hidden.has(t) ? hidden.delete(t) : hidden.add(t);
+      break;
+
+    // ── Required state ──────────────────────────────────────────────────────
+    case 'REQUIRE':
+      required.add(t);
+      break;
+    case 'UNREQUIRE':
+      required.delete(t);
+      break;
+
+    // ── Interaction state ───────────────────────────────────────────────────
+    case 'DISABLE':          // ← was falling to default (no-op)
+      disabled.add(t);
+      break;
+    case 'ENABLE':           // ← was falling to default (no-op)
+      disabled.delete(t);
+      break;
+
+    // ── Section visibility ──────────────────────────────────────────────────
+    case 'HIDE_SECTION':
+      hidden.add('__section__' + t);
+      break;
+    case 'SHOW_SECTION':
+      hidden.delete('__section__' + t);
+      break;
+
+    // ── Value manipulation ──────────────────────────────────────────────────
+    case 'SET_VALUE':
+      computed[t] = action.value;
+      break;
+    case 'CLEAR':            // ← was falling to default (no-op)
+      computed[t] = null;
+      break;
+    case 'COPY_FROM':        // ← was falling to default (no-op)
+      if (action.value != null) {
+        computed[t] = formData[action.value];
+      }
+      break;
+
+    // ── Submission ──────────────────────────────────────────────────────────
+    case 'BLOCK_SUBMIT':
+      if (action.value != null) blocking.push(String(action.value));
+      break;
+
+    // ── Not handled client-side (renderer concerns or server-only) ──────────
+    // READONLY, JUMP_TO_SECTION, SHOW_MESSAGE, SET_PRIORITY — handled in renderer
+    default:
+      break;
+  }
+}
+
+// ── Condition evaluation ──────────────────────────────────────────────────────
 
 function evaluateCondition(cond, data) {
   if (!cond) return true;
@@ -88,7 +151,7 @@ function evaluateCondition(cond, data) {
 }
 
 function evaluateClause(clause, data) {
-  const val = data[clause.field];
+  const val     = data[clause.field];
   const ruleVal = clause.value;
 
   switch (clause.operator) {
@@ -96,18 +159,23 @@ function evaluateClause(clause, data) {
       return String(val ?? '').toLowerCase() === String(ruleVal ?? '').toLowerCase();
     case 'NOT_EQUALS':
       return String(val ?? '').toLowerCase() !== String(ruleVal ?? '').toLowerCase();
+
     case 'IS_EMPTY':
       return val == null || String(val).trim() === '';
     case 'IS_NOT_EMPTY':
       return val != null && String(val).trim() !== '';
+
     case 'CONTAINS':
       return String(val ?? '').toLowerCase().includes(String(ruleVal ?? '').toLowerCase());
     case 'NOT_CONTAINS':
       return !String(val ?? '').toLowerCase().includes(String(ruleVal ?? '').toLowerCase());
+
+    // ── FIX #2: remove toLowerCase() — Java is case-sensitive here ────────
     case 'STARTS_WITH':
-      return String(val ?? '').toLowerCase().startsWith(String(ruleVal ?? '').toLowerCase());
+      return String(val ?? '').startsWith(String(ruleVal ?? ''));
     case 'ENDS_WITH':
-      return String(val ?? '').toLowerCase().endsWith(String(ruleVal ?? '').toLowerCase());
+      return String(val ?? '').endsWith(String(ruleVal ?? ''));
+
     case 'GREATER_THAN':
       return Number(val) > Number(ruleVal);
     case 'LESS_THAN':
@@ -116,36 +184,89 @@ function evaluateClause(clause, data) {
       return Number(val) >= Number(ruleVal);
     case 'LESS_OR_EQUAL':
       return Number(val) <= Number(ruleVal);
+
+    // ── FIX #1: use clause.valueTo as upper bound, matching Java ──────────
     case 'BETWEEN': {
-      const n = Number(val);
-      const [lo, hi] = Array.isArray(ruleVal) ? ruleVal : [ruleVal, ruleVal];
-      return n >= Number(lo) && n <= Number(hi);
+      const n  = Number(val);
+      const lo = Number(ruleVal);
+      const hi = Number(clause.valueTo);        // Java: clause.getValueTo()
+      return n >= lo && n <= hi;
     }
+
     case 'IN':
       return Array.isArray(ruleVal) ? ruleVal.includes(val) : val === ruleVal;
     case 'NOT_IN':
       return Array.isArray(ruleVal) ? !ruleVal.includes(val) : val !== ruleVal;
+
+    // ── FIX #3: dynamic date expressions matching Java's parseDate() ──────
     case 'BEFORE_DATE':
-      return new Date(val) < new Date(ruleVal);
+      return parseRuleDate(val) < parseRuleDate(ruleVal);
     case 'AFTER_DATE':
-      return new Date(val) > new Date(ruleVal);
+      return parseRuleDate(val) > parseRuleDate(ruleVal);
     case 'DATE_BETWEEN': {
-      const d = new Date(val);
-      const [start, end] = Array.isArray(ruleVal) ? ruleVal : [ruleVal, ruleVal];
-      return d >= new Date(start) && d <= new Date(end);
+      const d   = parseRuleDate(val);
+      const lo  = parseRuleDate(ruleVal);
+      const hi  = parseRuleDate(clause.valueTo); // Java: clause.getValueTo()
+      return d >= lo && d <= hi;
     }
+
     default:
       return false;
   }
 }
 
-/** Helper: build a blank new rule object for the rule builder UI */
+// ── Date helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * FIX #3: Parse a rule date value, supporting dynamic expressions.
+ * Mirrors Java's RuleEngineService.parseDate():
+ *   "TODAY"       → today at midnight
+ *   "TODAY+N"     → N days from today
+ *   "TODAY-N"     → N days before today
+ *   ISO date str  → parsed directly
+ *
+ * Returns a Date object (or epoch 0 on parse failure, matching Java's null → 0 compare).
+ */
+function parseRuleDate(value) {
+  if (value == null) return new Date(0);
+  const s = String(value).trim();
+
+  if (s.toUpperCase() === 'TODAY') {
+    return today();
+  }
+  const plusMatch  = s.match(/^TODAY\+(\d+)$/i);
+  const minusMatch = s.match(/^TODAY-(\d+)$/i);
+  if (plusMatch)  return addDays(today(), +plusMatch[1]);
+  if (minusMatch) return addDays(today(), -minusMatch[1]);
+
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? new Date(0) : d;
+}
+
+function today() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+// ── Builder helper ────────────────────────────────────────────────────────────
+
+/** Build a blank new rule object for the rule builder UI */
 export function newRule(id) {
   return {
     id: id || crypto.randomUUID(),
     trigger: 'ON_CHANGE',
-    condition: { logic: 'AND', clauses: [{ field: '', operator: 'EQUALS', value: '' }] },
-    actions: [{ type: 'HIDE', target: '' }],
+    condition: {
+      logic: 'AND',
+      clauses: [{ field: '', operator: 'EQUALS', value: '', valueTo: null }],
+    },
+    actions:     [{ type: 'HIDE', target: '' }],
     elseActions: [],
   };
 }

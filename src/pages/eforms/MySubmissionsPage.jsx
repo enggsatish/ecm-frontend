@@ -5,7 +5,7 @@
  */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, Undo2, ExternalLink, FileText } from 'lucide-react';
+import { Eye, Undo2, ExternalLink, FileText, Mail } from 'lucide-react';
 import { useMySubmissions, useWithdrawSubmission } from '../../hooks/useEForms';
 import StatusBadge from '../../components/eforms/StatusBadge';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -32,6 +32,8 @@ export default function MySubmissionsPage() {
     withdrawMutation.mutate(id, { onSuccess: () => setConfirmWithdraw(null) });
   };
 
+  const hasPendingSignature = submissions.some(s => s.status === 'PENDING_SIGNATURE');
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {/* Header */}
@@ -48,6 +50,20 @@ export default function MySubmissionsPage() {
           <FileText className="w-4 h-4" /> Fill a Form
         </button>
       </div>
+
+      {/* Signature-required banner — shown above the card when any submission is awaiting DocuSign */}
+      {hasPendingSignature && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 p-4">
+          <Mail className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Signature Required</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              DocuSign has emailed you a signing request. Open it and click "Review Documents"
+              to complete. This page refreshes automatically every 30 seconds.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -72,8 +88,9 @@ export default function MySubmissionsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {submissions.map((sub) => {
-                const isTerminal = TERMINAL_STATUSES.has(sub.status);
-                const isDraft    = sub.status === 'DRAFT';
+                const isTerminal      = TERMINAL_STATUSES.has(sub.status);
+                const isDraft         = sub.status === 'DRAFT';
+                const isPendingSig    = sub.status === 'PENDING_SIGNATURE';
                 return (
                   <tr key={sub.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
@@ -84,6 +101,13 @@ export default function MySubmissionsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={sub.status} />
+                      {/* Per-row signing hint — only shown for PENDING_SIGNATURE rows */}
+                      {isPendingSig && (
+                        <div className="mt-1 flex items-center gap-1 text-xs text-amber-700">
+                          <Mail className="w-3 h-3 flex-shrink-0" />
+                          <span>Check your email to sign</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
                       <span className="text-xs text-gray-500" title={safeFormat(sub.submittedAt)}>
@@ -115,7 +139,7 @@ export default function MySubmissionsPage() {
                           <Eye className="w-4 h-4" />
                         </button>
 
-                        {/* Withdraw */}
+                        {/* Withdraw — not available for terminal or draft statuses */}
                         {!isTerminal && !isDraft && (
                           <button
                             onClick={() => setConfirmWithdraw(sub.id)}

@@ -3,6 +3,9 @@
  * Zustand store for the eForms Designer.
  * Holds the live form schema being edited (sections, fields, rules, settings).
  * Separate from server state (TanStack Query). This store is the local working copy.
+ *
+ * Sprint-C change: Added workflowConfig fields to DEFAULT_FORM_META and
+ * initFromDefinition so FormSettingsPanel can read/write workflow linkage.
  */
 import { create } from 'zustand';
 
@@ -22,6 +25,13 @@ const DEFAULT_FORM_META = {
   productType: '',
   formType: '',
   tags: [],
+  // ── Workflow linkage ──────────────────────────────────────────────────────
+  // Maps to WorkflowConfig JSONB on the backend FormDefinition entity.
+  workflowKey:     '',      // workflowDefinitionKey — Flowable processKey
+  assignToRole:    '',      // override default role from the workflow definition
+  triggerOnSubmit: true,    // if false, submission never starts a workflow
+  slaDays:         5,       // SLA deadline in calendar days from submission
+  priority:        'NORMAL', // LOW | NORMAL | HIGH | URGENT
 };
 
 export const useEFormsDesignerStore = create((set, get) => ({
@@ -47,7 +57,9 @@ export const useEFormsDesignerStore = create((set, get) => ({
   // ── Initialise from existing definition ─────────────────────────────────
   // The server returns productTypeCode / formTypeCode — map these back to the
   // store's productType / formType keys so FormSettingsPanel binds correctly.
+  // workflowConfig is a JSONB object — destructure into flat meta fields.
   initFromDefinition: (definition) => {
+    const wfc = definition.workflowConfig || {};
     set({
       definitionId: definition.id,
       meta: {
@@ -57,6 +69,12 @@ export const useEFormsDesignerStore = create((set, get) => ({
         productType: definition.productTypeCode  || '',   // server → store mapping
         formType:    definition.formTypeCode     || '',   // server → store mapping
         tags:        definition.tags             || [],
+        // Workflow config fields
+        workflowKey:     wfc.workflowDefinitionKey || '',
+        assignToRole:    wfc.assignToRole          || '',
+        triggerOnSubmit: wfc.triggerOnSubmit       !== undefined ? wfc.triggerOnSubmit : true,
+        slaDays:         wfc.slaDays               ?? 5,
+        priority:        wfc.defaultPriority       || 'NORMAL',
       },
       schema: definition.schema || { ...DEFAULT_SCHEMA },
       isDirty: false,
