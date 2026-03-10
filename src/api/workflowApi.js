@@ -106,7 +106,7 @@ export const saveTemplateBpmn = (id, bpmnXml) =>
  * Used to seed the bpmn.io modeler on load.
  * @returns {string} raw BPMN 2.0 XML
  */
-export const qgetTemplateBpmnXml = (id) =>
+export const getTemplateBpmnXml = (id) =>
   apiClient.get(`/api/workflow/templates/${id}/preview-bpmn`, {
     headers: { Accept: 'application/xml' },
     responseType: 'text',
