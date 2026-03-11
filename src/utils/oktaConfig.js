@@ -11,6 +11,9 @@ if (!issuer || !clientId) {
   )
 }
 
+// NOTE: restoreOriginalUri is intentionally NOT set here.
+// It is passed as a prop on the <Security> component in App.jsx.
+// Setting it in both places triggers a console warning from okta-react.
 export const oktaAuth = new OktaAuth({
   issuer,
   clientId,
@@ -21,13 +24,11 @@ export const oktaAuth = new OktaAuth({
   tokenManager: {
     storage: 'sessionStorage',
     autoRenew: true,
-    // Sync token state across tabs
-    syncStorage: true
+    syncStorage: true,
   },
-  // Prevent multiple simultaneous login attempts
   cookies: {
-    secure: false    // false for localhost http
-  }
+    secure: false,   // false for localhost http
+  },
 })
 
 export default oktaAuth

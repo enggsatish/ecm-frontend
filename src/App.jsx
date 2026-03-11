@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { Suspense, lazy } from 'react'
 import { oktaAuth } from './utils/oktaConfig'
+import { ROLES, ROLE_GROUPS } from './utils/roles'
 
 // ── Layout & Guards ──────────────────────────────────────────────────────────
 const AppLayout   = lazy(() => import('./components/layout/AppLayout'))
@@ -26,10 +27,12 @@ const ProductsPage           = lazy(() => import('./pages/admin/ProductsPage'))
 const RetentionPage          = lazy(() => import('./pages/admin/RetentionPage'))
 const TenantSettingsPage     = lazy(() => import('./pages/admin/TenantSettingsPage'))
 const CustomerManagementPage = lazy(() => import('./pages/admin/CustomerManagementPage'))
-// Sprint-C additions
-const SegmentsPage     = lazy(() => import('./pages/admin/SegmentsPage'))
-const ProductLinesPage = lazy(() => import('./pages/admin/ProductLinesPage'))
-const AuditLogPage     = lazy(() => import('./pages/admin/AuditLogPage'))
+const SegmentsPage           = lazy(() => import('./pages/admin/SegmentsPage'))
+const ProductLinesPage       = lazy(() => import('./pages/admin/ProductLinesPage'))
+const AuditLogPage           = lazy(() => import('./pages/admin/AuditLogPage'))
+const RolesPage              = lazy(() => import('./pages/admin/RolesPage'))          // Sprint G
+const DocuSignSettingsPage   = lazy(() => import('./pages/admin/DocuSignSettingsPage'))
+const NotificationPreferencesPage = lazy(() => import('./pages/admin/NotificationPreferencesPage'))
 
 // ── eForms pages ─────────────────────────────────────────────────────────────
 const EFormsPage           = lazy(() => import('./pages/eforms/EFormsPage'))
@@ -39,11 +42,8 @@ const ReviewQueuePage      = lazy(() => import('./pages/eforms/ReviewQueuePage')
 const FormDesignerListPage = lazy(() => import('./pages/eforms/FormDesignerListPage'))
 const FormDesignerPage     = lazy(() => import('./pages/eforms/FormDesignerPage'))
 
-// -- Sprint 2 route addition (add to the protected routes section)
+// ── Other pages ───────────────────────────────────────────────────────────────
 const BackofficeQueuePage  = lazy(() => import('./pages/backoffice/BackofficeQueuePage'))
-const DocuSignSettingsPage = lazy(() => import('./pages/admin/DocuSignSettingsPage'))
-const NotificationPreferencesPage = lazy(() => import('./pages/admin/NotificationPreferencesPage'))
-
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -90,10 +90,10 @@ function AppRoutes() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
 
-          {/* ── Public: Okta callback — MUST be outside RequireAuth ── */}
+          {/* ── Public: Okta callback ──────────────────────────────────── */}
           <Route path="/login/callback" element={<LoginCallback />} />
 
-          {/* ── Protected shell ───────────────────────────────────── */}
+          {/* ── Protected shell ───────────────────────────────────────── */}
           <Route
             element={
               <RequireAuth>
@@ -101,34 +101,33 @@ function AppRoutes() {
               </RequireAuth>
             }
           >
-            {/* ── Core ──────────────────────────────────────────── */}
+            {/* ── Core ─────────────────────────────────────────────── */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
-            
+
             <Route path="/backoffice/queue" element={
-              <RoleGuard roles={['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER']}>
+              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
                 <BackofficeQueuePage />
               </RoleGuard>
             } />
 
             <Route path="/workflow" element={
-              <RoleGuard roles={['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER']}>
+              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
                 <WorkflowPage />
               </RoleGuard>
             } />
             <Route path="/workflow/designer" element={
-              <RoleGuard roles={['ECM_ADMIN', 'ECM_DESIGNER']}>
+              <RoleGuard roles={ROLE_GROUPS.DESIGN}>
                 <WorkflowDesigner />
               </RoleGuard>
             } />
 
-            {/* ── Admin (ECM_ADMIN only) — nested sub-routes ────── */}
+            {/* ── Admin (ECM_ADMIN only) ────────────────────────────── */}
             <Route path="/admin" element={
-              <RoleGuard roles={['ECM_ADMIN']}>
+              <RoleGuard roles={[ROLES.ADMIN]}>
                 <AdminPage />
               </RoleGuard>
             }>
-              {/* Default: redirect /admin → /admin/users */}
               <Route index element={<Navigate to="users" replace />} />
               <Route path="users"         element={<UsersAdminPage />} />
               <Route path="departments"   element={<DepartmentsPage />} />
@@ -137,45 +136,43 @@ function AppRoutes() {
               <Route path="customers"     element={<CustomerManagementPage />} />
               <Route path="retention"     element={<RetentionPage />} />
               <Route path="settings"      element={<TenantSettingsPage />} />
-              {/* Sprint-C additions */}
               <Route path="segments"      element={<SegmentsPage />} />
               <Route path="product-lines" element={<ProductLinesPage />} />
               <Route path="audit"         element={<AuditLogPage />} />
+              <Route path="roles"         element={<RolesPage />} />          {/* Sprint G */}
               <Route path="integrations/docusign" element={<DocuSignSettingsPage />} />
               <Route path="notifications" element={<NotificationPreferencesPage />} />
             </Route>
 
-            {/* ── eForms: all authenticated users ───────────────── */}
-            <Route path="/eforms" element={<EFormsPage />} />
-            <Route path="/eforms/fill/:formKey" element={<FormFillPage />} />
-            <Route path="/eforms/submissions/mine" element={<MySubmissionsPage />} />
+            {/* ── eForms ───────────────────────────────────────────── */}
+            <Route path="/eforms"                      element={<EFormsPage />} />
+            <Route path="/eforms/fill/:formKey"        element={<FormFillPage />} />
+            <Route path="/eforms/submissions/mine"     element={<MySubmissionsPage />} />
 
-            {/* ── eForms: review roles ───────────────────────────── */}
             <Route path="/eforms/submissions/queue" element={
-              <RoleGuard roles={['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER']}>
+              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
                 <ReviewQueuePage />
               </RoleGuard>
             } />
 
-            {/* ── eForms: designer roles ─────────────────────────── */}
             <Route path="/eforms/designer/list" element={
-              <RoleGuard roles={['ECM_ADMIN', 'ECM_DESIGNER']}>
+              <RoleGuard roles={ROLE_GROUPS.DESIGN}>
                 <FormDesignerListPage />
               </RoleGuard>
             } />
             <Route path="/eforms/designer/new" element={
-              <RoleGuard roles={['ECM_ADMIN', 'ECM_DESIGNER']}>
+              <RoleGuard roles={ROLE_GROUPS.DESIGN}>
                 <FormDesignerPage />
               </RoleGuard>
             } />
             <Route path="/eforms/designer/:id" element={
-              <RoleGuard roles={['ECM_ADMIN', 'ECM_DESIGNER']}>
+              <RoleGuard roles={ROLE_GROUPS.DESIGN}>
                 <FormDesignerPage />
               </RoleGuard>
             } />
           </Route>
 
-          {/* ── Default redirects ─────────────────────────────────── */}
+          {/* ── Default redirects ─────────────────────────────────────── */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
 

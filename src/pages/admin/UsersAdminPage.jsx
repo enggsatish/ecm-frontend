@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Search, ChevronDown, ChevronUp,
-  ShieldPlus, UserX, UserCheck, Loader2,
+  ShieldPlus, UserX, UserCheck, Loader2, UserPlus, X, Mail,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -11,6 +11,7 @@ import {
   useDeactivateUser,
   useReactivateUser,
   useDepartments,
+  useInviteUser,
 } from '../../hooks/useAdmin';
 
 const ALL_ROLES = ['ECM_ADMIN', 'ECM_DESIGNER', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_READONLY'];
@@ -205,6 +206,167 @@ function UserRow({ user }) {
   );
 }
 
+// ── Invite User Modal ─────────────────────────────────────────────────────────
+
+function InviteUserModal({ departments, onClose }) {
+  const [email,       setEmail]       = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [deptId,      setDeptId]      = useState('');
+  const [initRole,    setInitRole]    = useState('ECM_READONLY');
+
+  const inviteUser = useInviteUser();
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const handleSubmit = async () => {
+    try {
+      await inviteUser.mutateAsync({
+        email,
+        displayName:  displayName || undefined,
+        departmentId: deptId      || undefined,
+        initialRole:  initRole    || undefined,
+      });
+      toast.success(`Invitation sent to ${email}`);
+      onClose();
+    } catch (err) {
+      const msg = err?.response?.data?.message ?? 'Failed to invite user';
+      toast.error(msg);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.45)' }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Mail className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Invite User</h3>
+              <p className="text-xs text-gray-400">User activates on first SSO login</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Email address <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value.trim())}
+              placeholder="jane.doe@example.com"
+              className={`w-full px-3 py-2.5 border rounded-lg text-sm
+                          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                          ${email && !emailValid ? 'border-red-300' : 'border-gray-300'}`}
+            />
+            {email && !emailValid && (
+              <p className="text-xs text-red-500 mt-1">Enter a valid email address</p>
+            )}
+          </div>
+
+          {/* Display name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Display name <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              placeholder="Jane Doe"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Department */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Department <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <select
+              value={deptId}
+              onChange={e => setDeptId(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">— No department —</option>
+              {(departments ?? []).map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Initial role */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Initial role
+            </label>
+            <select
+              value={initRole}
+              onChange={e => setInitRole(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              {ALL_ROLES.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Additional roles can be assigned from the Users table after the user logs in.
+            </p>
+          </div>
+
+          {/* Info banner */}
+          <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 flex gap-2.5">
+            <Mail className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-blue-700">
+              A pending user record will be created. The user must sign in via SSO
+              — their account activates automatically on first login.
+            </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-6 pb-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!emailValid || inviteUser.isPending}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white
+                       rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {inviteUser.isPending
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Mail className="w-4 h-4" />
+            }
+            Send Invitation
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function UsersAdminPage() {
@@ -213,6 +375,7 @@ export default function UsersAdminPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [deptFilter,   setDeptFilter]   = useState('');
   const [page,         setPage]         = useState(0);
+  const [showInvite,   setShowInvite]   = useState(false);
 
   const { data: depts } = useDepartments(true);
   const { data, isLoading, isError } = useUsers({
@@ -233,7 +396,7 @@ export default function UsersAdminPage() {
 
       {/* ── Sticky filter bar ─────────────────────────────────────────── */}
       <div className="flex-shrink-0 px-6 pt-5 pb-4 bg-gray-50 border-b border-gray-200">
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 items-center">
           {/* Search */}
           <div className="relative flex-1 min-w-56">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -279,6 +442,17 @@ export default function UsersAdminPage() {
             <option value="">All Departments</option>
             {(depts ?? []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
+
+          {/* ── Invite User ── */}
+          <button
+            onClick={() => setShowInvite(true)}
+            className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white
+                       rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors
+                       whitespace-nowrap"
+          >
+            <UserPlus size={14} />
+            Invite User
+          </button>
         </div>
       </div>
 
@@ -345,6 +519,14 @@ export default function UsersAdminPage() {
           </div>
         )}
       </div>
+
+      {/* Invite User modal */}
+      {showInvite && (
+        <InviteUserModal
+          departments={depts}
+          onClose={() => setShowInvite(false)}
+        />
+      )}
     </div>
   );
 }

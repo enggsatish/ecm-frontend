@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  searchUsers, getUser, updateUser, addRole, removeRole,
+  searchUsers, inviteUser, getUser, updateUser, addRole, removeRole,
   deactivateUser, reactivateUser,
   getDepartments, createDepartment, updateDepartment, deactivateDepartment,
   getCategories, createCategory, updateCategory, deactivateCategory,
@@ -12,7 +12,9 @@ import {
   getHierarchy, getSegments, createSegment, updateSegment,
   getProductLines, createProductLine, updateProductLine,
   getAuditLog,
-  listCustomers, getCustomer, createCustomer, updateCustomer, deactivateCustomer,
+  listCustomers, getCustomer, createCustomer, updateCustomer, deactivateCustomer, getRoles, getRole, createRole, updateRole, deleteRole,
+  addPermissionToRole, removePermissionFromRole, applyBundleToRole,
+  getPermissions, getBundles,
 } from '../api/adminApi';
 
 // ── Users ──────────────────────────────────────────────────────────────────
@@ -22,6 +24,14 @@ export const useUsers = (params) =>
     queryFn: () => searchUsers(params),
     staleTime: 30_000,
   });
+
+export const useInviteUser = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => inviteUser(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  });
+};
 
 export const useUser = (id) =>
   useQuery({
@@ -444,3 +454,81 @@ export const useDeactivateCustomer = () => {
     },
   });
 };
+export const useRoles = () =>
+  useQuery({
+    queryKey: ['admin', 'roles'],
+    queryFn: getRoles,
+    staleTime: 60_000,
+  });
+
+export const useRole = (id) =>
+  useQuery({
+    queryKey: ['admin', 'roles', id],
+    queryFn: () => getRole(id),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
+export const useCreateRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => createRole(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'roles'] }),
+  });
+};
+
+export const useUpdateRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }) => updateRole(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'roles'] }),
+  });
+};
+
+export const useDeleteRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => deleteRole(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'roles'] }),
+  });
+};
+
+export const useAddPermissionToRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ roleId, permissionId }) => addPermissionToRole(roleId, permissionId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'roles'] }),
+  });
+};
+
+export const useRemovePermissionFromRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ roleId, permissionId }) => removePermissionFromRole(roleId, permissionId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'roles'] }),
+  });
+};
+
+export const useApplyBundleToRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ roleId, bundleId }) => applyBundleToRole(roleId, bundleId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'roles'] }),
+  });
+};
+
+// ── Permissions catalogue (Sprint G) ──────────────────────────────────────
+
+export const usePermissions = () =>
+  useQuery({
+    queryKey: ['admin', 'permissions'],
+    queryFn: getPermissions,
+    staleTime: 10 * 60_000,   // permission catalogue changes very rarely
+  });
+
+export const useBundles = () =>
+  useQuery({
+    queryKey: ['admin', 'bundles'],
+    queryFn: getBundles,
+    staleTime: 10 * 60_000,
+  });

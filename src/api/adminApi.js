@@ -6,6 +6,15 @@ const unwrap = (r) => r.data?.data ?? r.data;
 export const searchUsers = (params) =>
   api.get('/api/admin/users', { params }).then(unwrap);
 
+/**
+ * POST /api/admin/users/invite
+ * Invites a new user by email. The backend creates a pending user record;
+ * the user activates on first SSO login.
+ * Body: { email, displayName, departmentId?, initialRole? }
+ */
+export const inviteUser = (payload) =>
+  api.post('/api/admin/users/invite', payload).then(unwrap);
+
 export const getUser = (id) =>
   api.get(`/api/admin/users/${id}`).then(unwrap);
 
@@ -98,12 +107,7 @@ export const updateConfigKey = (key, payload) =>
 export const bulkUpdateConfig = (configs) =>
   api.put('/api/admin/config', { configs }).then(unwrap);
 
-// ── Hierarchy (Sprint-C) ───────────────────────────────────────────────────
-/**
- * GET /api/admin/hierarchy
- * Returns the full Segment → ProductLine → Product tree.
- * Used by cascading selects in DocumentUpload.
- */
+// ── Hierarchy ──────────────────────────────────────────────────────────────
 export const getHierarchy = () =>
   api.get('/api/admin/hierarchy').then(unwrap);
 
@@ -133,61 +137,86 @@ export const updateProductLine = (id, payload) =>
 export const getAuditLog = (params) =>
   api.get('/api/admin/audit', { params }).then(unwrap);
 
-// ── Customers (Parties) — Sprint 1 ────────────────────────────────────────
-/**
- * GET /api/admin/customers?q=&page=0&size=20
- * Returns Spring Page: { content, totalElements, totalPages, ... }
- */
+// ── Customers (Parties) ────────────────────────────────────────────────────
 export const listCustomers = (params = {}) =>
   api.get('/api/admin/customers', { params }).then(unwrap);
 
 export const getCustomer = (id) =>
   api.get(`/api/admin/customers/${id}`).then(unwrap);
 
-/**
- * POST /api/admin/customers
- * { customerRef, displayName, segment, segmentId?, shortName?,
- *   registrationNo?, notes?, email?, phone?, primaryProductId? }
- */
 export const createCustomer = (payload) =>
   api.post('/api/admin/customers', payload).then(unwrap);
 
-/**
- * PUT /api/admin/customers/:id
- * customerRef (external_id) is immutable — include it but backend ignores it on update.
- */
 export const updateCustomer = (id, payload) =>
   api.put(`/api/admin/customers/${id}`, payload).then(unwrap);
 
-/**
- * DELETE /api/admin/customers/:id
- * Soft-delete — sets is_active = false.
- */
 export const deactivateCustomer = (id) =>
   api.delete(`/api/admin/customers/${id}`).then(unwrap);
+
 // ── DocuSign Integration Config ────────────────────────────────────────────
-/**
- * GET /api/admin/integrations/docusign
- * Returns the current DocuSign config for the default tenant.
- * Sensitive fields (rsaPrivateKey, webhookHmacSecret) are returned as
- * '*** saved ***' once set — the backend never echoes raw secrets.
- */
 export const getDocuSignConfig = () =>
   api.get('/api/admin/integrations/docusign').then(unwrap);
 
-/**
- * PUT /api/admin/integrations/docusign
- * Save DocuSign configuration.  Fields that equal '*** saved ***' are
- * treated as "no change" by the backend and the existing encrypted value
- * is preserved.
- */
 export const saveDocuSignConfig = (payload) =>
   api.put('/api/admin/integrations/docusign', payload).then(unwrap);
 
-/**
- * POST /api/admin/integrations/docusign/test
- * Fires a live JWT-grant call to DocuSign and returns { success, message }.
- * Only callable when enabled = true and credentials are saved.
- */
 export const testDocuSignConnection = () =>
   api.post('/api/admin/integrations/docusign/test').then(unwrap);
+
+// ── Roles & Permissions (Sprint G) ────────────────────────────────────────
+
+/** GET /api/admin/roles — list all roles with permission counts */
+export const getRoles = () =>
+  api.get('/api/admin/roles').then(unwrap);
+
+/** GET /api/admin/roles/:id — get role with full permission list */
+export const getRole = (id) =>
+  api.get(`/api/admin/roles/${id}`).then(unwrap);
+
+/**
+ * POST /api/admin/roles
+ * { name: "ECM_CUSTOM_ROLE", description: "..." }
+ */
+export const createRole = (payload) =>
+  api.post('/api/admin/roles', payload).then(unwrap);
+
+/**
+ * PUT /api/admin/roles/:id
+ * { name?, description? }
+ */
+export const updateRole = (id, payload) =>
+  api.put(`/api/admin/roles/${id}`, payload).then(unwrap);
+
+/** DELETE /api/admin/roles/:id — soft-delete (is_active = false) */
+export const deleteRole = (id) =>
+  api.delete(`/api/admin/roles/${id}`).then(unwrap);
+
+/**
+ * POST /api/admin/roles/:id/permissions
+ * Body: { permissionCode: "documents:export" }
+ * permissionCode is the string code (e.g. "documents:export"), NOT a UUID.
+ */
+export const addPermissionToRole = (roleId, permissionCode) =>
+  api.post(`/api/admin/roles/${roleId}/permissions`, { permissionCode }).then(unwrap);
+
+/**
+ * DELETE /api/admin/roles/:id/permissions/:code
+ * permissionCode is the string code (e.g. "documents:export"), NOT a UUID.
+ */
+export const removePermissionFromRole = (roleId, permissionCode) =>
+  api.delete(`/api/admin/roles/${roleId}/permissions/${permissionCode}`).then(unwrap);
+
+/**
+ * POST /api/admin/roles/:id/bundles/:bundleId
+ * Applies a capability bundle to a role (expands to individual permissions)
+ */
+export const applyBundleToRole = (roleId, bundleId) =>
+  api.post(`/api/admin/roles/${roleId}/bundles/${bundleId}`).then(unwrap);
+
+/** GET /api/admin/permissions — list all 24 permissions grouped by module */
+export const getPermissions = () =>
+  api.get('/api/admin/permissions').then(unwrap);
+
+/** GET /api/admin/bundles — list all capability bundles with permissions */
+export const getBundles = () =>
+  api.get('/api/admin/bundles').then(unwrap);

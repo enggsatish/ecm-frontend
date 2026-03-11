@@ -1,89 +1,83 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { useOktaAuth } from '@okta/okta-react'
-import { useState, useEffect } from 'react'
+import { useOktaAuth }          from '@okta/okta-react'
+import { useState, useEffect }  from 'react'
 import {
   LayoutDashboard, FolderOpen, ClipboardList,
   CheckSquare, Settings, LogOut, Building2,
   PenLine, FileCheck, Inbox, ChevronDown,
   Users, FolderTree, Package, Archive, GitMerge,
-  // Sprint-C additions
   Layers, GitBranch, ShieldCheck, Link2,
-  // Sprint-2 additions
-  Bell,
+  Bell, Shield,
 } from 'lucide-react'
-import useUserStore from '../../store/userStore'
+import useUserStore     from '../../store/userStore'
+import { ROLES, ROLE_GROUPS } from '../../utils/roles'
 
-// ─── eForms sub-nav items ─────────────────────────────────────────────────────
+// ─── eForms sub-nav ───────────────────────────────────────────────────────────
 const EFORMS_CHILDREN = [
-  { path: '/eforms', label: 'Overview', icon: ClipboardList, roles: null, exact: true },
-  { path: '/eforms/submissions/mine', label: 'My Submissions', icon: FileCheck, roles: null },
-  {
-    path: '/eforms/submissions/queue',
-    label: 'Review Queue',
-    icon: Inbox,
-    roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER'],
-  },
-  { path: '/eforms/designer/list', label: 'Form Designer', icon: PenLine, roles: ['ECM_ADMIN', 'ECM_DESIGNER'] },
+  { path: '/eforms',                    label: 'Overview',      icon: ClipboardList, roles: null,                  exact: true },
+  { path: '/eforms/submissions/mine',   label: 'My Submissions',icon: FileCheck,     roles: null },
+  { path: '/eforms/submissions/queue',  label: 'Review Queue',  icon: Inbox,         roles: ROLE_GROUPS.OPERATIONS },
+  { path: '/eforms/designer/list',      label: 'Form Designer', icon: PenLine,       roles: ROLE_GROUPS.DESIGN },
 ]
 
+// ─── Admin sub-nav ────────────────────────────────────────────────────────────
 const ADMIN_CHILDREN = [
-  { path: '/admin/users',         label: 'Users',         icon: Users,      roles: ['ECM_ADMIN'] },
-  { path: '/admin/departments',   label: 'Departments',   icon: Building2,  roles: ['ECM_ADMIN'] },
-  { path: '/admin/categories',    label: 'Categories',    icon: FolderTree, roles: ['ECM_ADMIN'] },
-  { path: '/admin/products',      label: 'Products',      icon: Package,    roles: ['ECM_ADMIN'] },
-  { path: '/admin/retention',     label: 'Retention',     icon: Archive,    roles: ['ECM_ADMIN'] },
-  { path: '/admin/settings',      label: 'Settings',      icon: Settings,   roles: ['ECM_ADMIN'] },
-  { path: '/admin/segments',      label: 'Segments',      icon: Layers,     roles: ['ECM_ADMIN'] },
-  { path: '/admin/product-lines', label: 'Product Lines', icon: GitBranch,  roles: ['ECM_ADMIN'] },
-  { path: '/admin/audit',         label: 'Audit Log',     icon: ShieldCheck, roles: ['ECM_ADMIN'] },
-  // ── Sprint 2: Integrations ────────────────────────────────────────────────
-  { path: '/admin/integrations/docusign', label: 'DocuSign',               icon: Link2, roles: ['ECM_ADMIN'] },
-  { path: '/admin/notifications',         label: 'Notification Prefs',      icon: Bell,  roles: ['ECM_ADMIN'] },
+  { path: '/admin/users',                   label: 'Users',              icon: Users,       roles: [ROLES.ADMIN] },
+  { path: '/admin/departments',             label: 'Departments',        icon: Building2,   roles: [ROLES.ADMIN] },
+  { path: '/admin/categories',              label: 'Categories',         icon: FolderTree,  roles: [ROLES.ADMIN] },
+  { path: '/admin/products',                label: 'Products',           icon: Package,     roles: [ROLES.ADMIN] },
+  { path: '/admin/retention',               label: 'Retention',          icon: Archive,     roles: [ROLES.ADMIN] },
+  { path: '/admin/settings',                label: 'Settings',           icon: Settings,    roles: [ROLES.ADMIN] },
+  { path: '/admin/segments',                label: 'Segments',           icon: Layers,      roles: [ROLES.ADMIN] },
+  { path: '/admin/product-lines',           label: 'Product Lines',      icon: GitBranch,   roles: [ROLES.ADMIN] },
+  { path: '/admin/audit',                   label: 'Audit Log',          icon: ShieldCheck, roles: [ROLES.ADMIN] },
+  { path: '/admin/roles',                   label: 'Roles & Permissions',icon: Shield,      roles: [ROLES.ADMIN] },
+  { path: '/admin/integrations/docusign',   label: 'DocuSign',           icon: Link2,       roles: [ROLES.ADMIN] },
+  { path: '/admin/notifications',           label: 'Notification Prefs', icon: Bell,        roles: [ROLES.ADMIN] },
 ]
 
 // ─── Top-level nav ────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   {
     path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard',
-    roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_DESIGNER', 'ECM_READONLY'],
+    roles: ROLE_GROUPS.ALL,
   },
   {
     path: '/documents', icon: FolderOpen, label: 'Documents',
-    roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_DESIGNER', 'ECM_READONLY'],
+    roles: ROLE_GROUPS.ALL,
   },
   {
     path: '/eforms', icon: ClipboardList, label: 'eForms',
     isGroup: true, groupKey: 'eforms',
-    roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_DESIGNER', 'ECM_READONLY'],
+    roles: ROLE_GROUPS.ALL,
     children: EFORMS_CHILDREN,
   },
-  // ── Sprint 2: Promoted backoffice queue ───────────────────────────────────
   {
     path: '/backoffice/queue', icon: Inbox, label: 'Review Queue',
-    roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER'],
+    roles: ROLE_GROUPS.OPERATIONS,
   },
   {
-    path: '/workflow',       icon: CheckSquare, label: 'My Tasks',
-    roles: ['ECM_ADMIN', 'ECM_BACKOFFICE', 'ECM_REVIEWER'],
+    path: '/workflow', icon: CheckSquare, label: 'My Tasks',
+    roles: ROLE_GROUPS.OPERATIONS,
   },
   {
     path: '/workflow/designer', icon: GitMerge, label: 'Workflow Designer',
-    roles: ['ECM_ADMIN', 'ECM_DESIGNER'],
+    roles: ROLE_GROUPS.DESIGN,
   },
   {
     path: '/admin', icon: Settings, label: 'Administration',
     isGroup: true, groupKey: 'admin',
-    roles: ['ECM_ADMIN'],
+    roles: [ROLES.ADMIN],
     children: ADMIN_CHILDREN,
   },
 ]
 
 const ROLE_LABELS = {
-  ECM_ADMIN:      { label: 'Admin',       bg: 'bg-accent-500/20 text-accent-300' },
-  ECM_DESIGNER:   { label: 'Designer',    bg: 'bg-accent-500/20 text-accent-300' },
-  ECM_BACKOFFICE: { label: 'Back Office', bg: 'bg-primary-700/60 text-primary-200' },
-  ECM_REVIEWER:   { label: 'Reviewer',    bg: 'bg-primary-700/60 text-primary-200' },
-  ECM_READONLY:   { label: 'Read Only',   bg: 'bg-primary-700/60 text-primary-200' },
+  [ROLES.ADMIN]:      { label: 'Admin',       bg: 'bg-accent-500/20 text-accent-300' },
+  [ROLES.DESIGNER]:   { label: 'Designer',    bg: 'bg-accent-500/20 text-accent-300' },
+  [ROLES.BACKOFFICE]: { label: 'Back Office', bg: 'bg-primary-700/60 text-primary-200' },
+  [ROLES.REVIEWER]:   { label: 'Reviewer',    bg: 'bg-primary-700/60 text-primary-200' },
+  [ROLES.READONLY]:   { label: 'Read Only',   bg: 'bg-primary-700/60 text-primary-200' },
 }
 
 function hasRole(userRoles = [], required) {
@@ -92,9 +86,9 @@ function hasRole(userRoles = [], required) {
 }
 
 export default function Sidebar() {
-  const { user } = useUserStore()
+  const { user }     = useUserStore()
   const { oktaAuth } = useOktaAuth()
-  const location = useLocation()
+  const location     = useLocation()
 
   const isInEForms = location.pathname.startsWith('/eforms')
   const isInAdmin  = location.pathname.startsWith('/admin')
@@ -118,7 +112,6 @@ export default function Sidebar() {
     .toUpperCase()
     .slice(0, 2) ?? '?'
 
-  // Map groupKey → open state + toggle
   const groupState = {
     eforms: { isOpen: eformsOpen, onToggle: () => setEformsOpen(v => !v) },
     admin:  { isOpen: adminOpen,  onToggle: () => setAdminOpen(v => !v)  },
@@ -260,7 +253,7 @@ export default function Sidebar() {
   )
 }
 
-// ─── Reusable collapsible nav group (used by eForms and Admin) ────────────────
+// ─── Collapsible nav group ────────────────────────────────────────────────────
 function NavGroup({ item, userRoles, isOpen, onToggle, currentPath }) {
   const Icon = item.icon
   const isGroupActive = currentPath.startsWith(item.path)
