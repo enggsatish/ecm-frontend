@@ -23,7 +23,6 @@ export const eformsKeys = {
   schema:         (formKey) => ['eforms', 'schema', formKey],
   mySubmissions:  ()        => ['eforms', 'submissions', 'mine'],
   allSubmissions: ()        => ['eforms', 'submissions', 'all'],
-  reviewQueue:    ()        => ['eforms', 'submissions', 'queue'],
   submission:     (id)      => ['eforms', 'submission', id],
 }
 
@@ -174,15 +173,6 @@ export function useAllSubmissions() {
   })
 }
 
-/** Returns T[] — auto-refreshes every 30 s. */
-export function useReviewQueue() {
-  return useQuery({
-    queryKey:        eformsKeys.reviewQueue(),
-    queryFn:         () => api.getReviewQueue(),
-    refetchInterval: 30_000,
-  })
-}
-
 /** Returns a single submission object. */
 export function useSubmission(id) {
   return useQuery({
@@ -201,19 +191,6 @@ export function useSubmitForm() {
       toast.success(vars.draft ? 'Draft saved' : 'Form submitted successfully')
     },
     onError: (err) => toast.error(err?.message || 'Submission failed'),
-  })
-}
-
-export function useUpdateSubmissionStatus() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, ...payload }) => api.updateSubmissionStatus(id, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: eformsKeys.reviewQueue() })
-      qc.invalidateQueries({ queryKey: eformsKeys.allSubmissions() })
-      toast.success('Status updated')
-    },
-    onError: (err) => toast.error(err?.message || 'Failed to update status'),
   })
 }
 

@@ -22,8 +22,7 @@ const DEFAULT_FORM_META = {
   name: '',
   description: '',
   formKey: '',
-  productType: '',
-  formType: '',
+  documentCategoryId: null,     // FK → document_categories, determines OCR template
   tags: [],
   // ── Workflow linkage ──────────────────────────────────────────────────────
   // Maps to WorkflowConfig JSONB on the backend FormDefinition entity.
@@ -55,8 +54,6 @@ export const useEFormsDesignerStore = create((set, get) => ({
   isDirty: false,
 
   // ── Initialise from existing definition ─────────────────────────────────
-  // The server returns productTypeCode / formTypeCode — map these back to the
-  // store's productType / formType keys so FormSettingsPanel binds correctly.
   // workflowConfig is a JSONB object — destructure into flat meta fields.
   initFromDefinition: (definition) => {
     const wfc = definition.workflowConfig || {};
@@ -66,8 +63,7 @@ export const useEFormsDesignerStore = create((set, get) => ({
         name:        definition.name             || '',
         description: definition.description      || '',
         formKey:     definition.formKey          || '',
-        productType: definition.productTypeCode  || '',   // server → store mapping
-        formType:    definition.formTypeCode     || '',   // server → store mapping
+        documentCategoryId: definition.documentCategoryId || null,
         tags:        definition.tags             || [],
         // Workflow config fields
         workflowKey:     wfc.workflowDefinitionKey || '',

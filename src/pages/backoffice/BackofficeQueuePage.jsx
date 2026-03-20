@@ -13,6 +13,7 @@ import {
   Inbox, UserCheck, CheckCircle2, Clock, RefreshCw,
   Building2, FileText, AlertCircle, ChevronDown,
   CheckCircle, XCircle, MessageSquare, UserMinus, Loader2,
+  Forward,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -23,19 +24,23 @@ import useUserStore from '../../store/userStore'
 // ── API wrappers ──────────────────────────────────────────────────────────────
 const unwrap = r => r.data?.data ?? r.data
 
-const getQueue     = (assignedToMe) =>
+const getQueue       = (assignedToMe) =>
   apiClient.get('/api/workflow/tasks/queue', { params: { assignedToMe } }).then(unwrap)
-const claimTask    = (taskId) =>
+const claimTask      = (taskId) =>
   apiClient.post(`/api/workflow/tasks/${taskId}/claim`).then(unwrap)
-const releaseTask  = (taskId, comment) =>
+const releaseTask    = (taskId, comment) =>
   apiClient.post(`/api/workflow/tasks/${taskId}/release`, { comment }).then(unwrap)
-const approveTask  = (taskId, comment) =>
+const adminRelease   = (taskId) =>
+  apiClient.post(`/api/workflow/tasks/${taskId}/admin-release`).then(unwrap)
+const approveTask    = (taskId, comment) =>
   apiClient.post(`/api/workflow/tasks/${taskId}/approve`, { decision: 'APPROVED', comment }).then(unwrap)
-const rejectTask   = (taskId, comment) =>
+const rejectTask     = (taskId, comment) =>
   apiClient.post(`/api/workflow/tasks/${taskId}/reject`, { decision: 'REJECTED', comment }).then(unwrap)
-const requestInfo  = (taskId, comment) =>
+const requestInfo    = (taskId, comment) =>
   apiClient.post(`/api/workflow/tasks/${taskId}/request-info`, { decision: 'REQUEST_INFO', comment }).then(unwrap)
-const getHistory   = (taskId) =>
+const passTask       = (taskId, comment) =>
+  apiClient.post(`/api/workflow/tasks/${taskId}/pass`, { decision: 'PASS', comment }).then(unwrap)
+const getHistory     = (taskId) =>
   apiClient.get(`/api/workflow/tasks/${taskId}/history`).then(unwrap)
 
 // ── SLA badge config ──────────────────────────────────────────────────────────
@@ -77,10 +82,11 @@ function ActionModal({ task, action, onClose, onConfirm, isPending }) {
   const [comment, setComment] = useState('')
 
   const config = {
-    approve:      { title: 'Approve Task',        icon: CheckCircle, iconColor: 'text-green-500', bg: 'bg-green-50', requireNote: false, btnClass: 'bg-green-600 hover:bg-green-700' },
-    reject:       { title: 'Reject Task',         icon: XCircle,     iconColor: 'text-red-500',   bg: 'bg-red-50',   requireNote: true,  btnClass: 'bg-red-600 hover:bg-red-700' },
-    'req-info':   { title: 'Request Information', icon: MessageSquare, iconColor: 'text-blue-500', bg: 'bg-blue-50', requireNote: true,  btnClass: 'bg-blue-600 hover:bg-blue-700' },
-    release:      { title: 'Release Task',        icon: UserMinus,   iconColor: 'text-gray-500',  bg: 'bg-gray-50',  requireNote: false, btnClass: 'bg-gray-600 hover:bg-gray-700' },
+    approve:      { title: 'Approve Task',           icon: CheckCircle,    iconColor: 'text-green-500',  bg: 'bg-green-50',   requireNote: false, btnClass: 'bg-green-600 hover:bg-green-700' },
+    reject:       { title: 'Reject Task',            icon: XCircle,        iconColor: 'text-red-500',    bg: 'bg-red-50',     requireNote: true,  btnClass: 'bg-red-600 hover:bg-red-700' },
+    'req-info':   { title: 'Request Information',    icon: MessageSquare,  iconColor: 'text-blue-500',   bg: 'bg-blue-50',    requireNote: true,  btnClass: 'bg-blue-600 hover:bg-blue-700' },
+    pass:         { title: 'Pass to Backoffice',     icon: Forward,        iconColor: 'text-purple-500', bg: 'bg-purple-50',  requireNote: false, btnClass: 'bg-purple-600 hover:bg-purple-700' },
+    release:      { title: 'Release Task',           icon: UserMinus,      iconColor: 'text-gray-500',   bg: 'bg-gray-50',    requireNote: false, btnClass: 'bg-gray-600 hover:bg-gray-700' },
   }
 
   const cfg = config[action]
@@ -156,7 +162,7 @@ function ActionModal({ task, action, onClose, onConfirm, isPending }) {
 }
 
 // ── Task Row ──────────────────────────────────────────────────────────────────
-function TaskRow({ task, currentUserSubject, onAction }) {
+function TaskRow({ task, currentUserSubject, isAdmin, onAction }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const { data: history } = useQuery({
     queryKey: ['task-history', task.taskId],
@@ -166,6 +172,9 @@ function TaskRow({ task, currentUserSubject, onAction }) {
 
   const isMyTask = task.assignee === currentUserSubject
   const isUnassigned = !task.assignee
+  const isOthersClaimed = task.assignee && !isMyTask
+  // Triage tasks show Pass/Approve (route decision), regular tasks show Approve/Reject
+  const isTriage = (task.taskName || '').toLowerCase().includes('triage')
 
   return (
     <>
@@ -241,7 +250,35 @@ function TaskRow({ task, currentUserSubject, onAction }) {
               </button>
             )}
 
-            {isMyTask && (
+            {isMyTask && isTriage && (
+              <>
+                <button
+                  onClick={() => onAction('pass', task)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium
+                             text-purple-700 bg-purple-50 border border-purple-200 rounded-lg
+                             hover:bg-purple-100 transition-colors"
+                >
+                  <Forward size={12} /> Send to Backoffice
+                </button>
+                <button
+                  onClick={() => onAction('approve', task)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium
+                             text-green-700 bg-green-50 border border-green-200 rounded-lg
+                             hover:bg-green-100 transition-colors"
+                >
+                  <CheckCircle size={12} /> Send to Reviewer
+                </button>
+                <button
+                  onClick={() => onAction('release', task)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                  title="Release task"
+                >
+                  <UserMinus size={14} />
+                </button>
+              </>
+            )}
+
+            {isMyTask && !isTriage && (
               <>
                 <button
                   onClick={() => onAction('approve', task)}
@@ -275,6 +312,19 @@ function TaskRow({ task, currentUserSubject, onAction }) {
                   <UserMinus size={14} />
                 </button>
               </>
+            )}
+
+            {/* Admin can release tasks claimed by other users */}
+            {isOthersClaimed && isAdmin && (
+              <button
+                onClick={() => onAction('admin-release', task)}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium
+                           text-orange-700 bg-orange-50 border border-orange-200 rounded-lg
+                           hover:bg-orange-100 transition-colors"
+                title={`Release from ${task.assignee}`}
+              >
+                <UserMinus size={12} /> Release
+              </button>
             )}
 
             {/* History toggle */}
@@ -331,22 +381,25 @@ function TaskRow({ task, currentUserSubject, onAction }) {
 export default function BackofficeQueuePage() {
   const qc = useQueryClient()
   const { user } = useUserStore()
-  const [tab, setTab] = useState('unassigned') // unassigned | mine | completed
+  const [tab, setTab] = useState('unassigned') // unassigned | mine | all
   const [modal, setModal] = useState(null) // { action, task }
 
-  const assignedToMe = tab === 'mine'
+  const isAdmin = user?.roles?.includes('ECM_ADMIN')
+  const currentUserSubject = user?.entraObjectId || user?.email || ''
 
+  // For 'mine' tab, fetch assigned-to-me; for others, fetch the full queue
   const { data: rawItems = [], isLoading, isFetching, refetch } = useQuery({
     queryKey:        ['backoffice-queue', tab],
-    queryFn:         () => getQueue(assignedToMe),
+    queryFn:         () => getQueue(tab === 'mine'),
     refetchInterval: 30_000,
-    enabled:         tab !== 'completed',
   })
 
-  // Filter client-side: unassigned tab shows only unassigned tasks
+  // Filter client-side based on tab
   const items = tab === 'unassigned'
     ? rawItems.filter(t => !t.assignee)
-    : rawItems
+    : tab === 'mine'
+    ? rawItems.filter(t => t.assignee === currentUserSubject)
+    : rawItems // 'all' tab — admin sees everything
 
   // Mutations
   const claimMut = useMutation({
@@ -357,18 +410,22 @@ export default function BackofficeQueuePage() {
 
   const actionMut = useMutation({
     mutationFn: ({ action, taskId, comment }) => {
-      if (action === 'approve')   return approveTask(taskId, comment)
-      if (action === 'reject')    return rejectTask(taskId, comment)
-      if (action === 'req-info')  return requestInfo(taskId, comment)
-      if (action === 'release')   return releaseTask(taskId, comment)
+      if (action === 'approve')        return approveTask(taskId, comment)
+      if (action === 'reject')         return rejectTask(taskId, comment)
+      if (action === 'req-info')       return requestInfo(taskId, comment)
+      if (action === 'pass')           return passTask(taskId, comment)
+      if (action === 'release')        return releaseTask(taskId, comment)
+      if (action === 'admin-release')  return adminRelease(taskId)
       throw new Error('Unknown action')
     },
     onSuccess: (_, { action }) => {
       const msgs = {
-        approve: 'Task approved',
-        reject:  'Task rejected',
-        'req-info': 'Information requested from submitter',
-        release: 'Task returned to queue',
+        approve:         'Task approved',
+        reject:          'Task rejected',
+        'req-info':      'Information requested from submitter',
+        pass:            'Task passed to backoffice team',
+        release:         'Task returned to queue',
+        'admin-release': 'Task released by admin',
       }
       toast.success(msgs[action] || 'Action completed')
       setModal(null)
@@ -380,6 +437,11 @@ export default function BackofficeQueuePage() {
   const handleAction = (action, task) => {
     if (action === 'claim') {
       claimMut.mutate({ taskId: task.taskId })
+    } else if (action === 'admin-release') {
+      // Admin release doesn't need a modal — just confirm
+      if (confirm(`Release this task from ${task.assignee?.split('@')[0] ?? 'user'}?`)) {
+        actionMut.mutate({ action, taskId: task.taskId })
+      }
     } else {
       setModal({ action, task })
     }
@@ -393,7 +455,7 @@ export default function BackofficeQueuePage() {
   const tabs = [
     { id: 'unassigned', label: 'Unassigned', icon: Inbox },
     { id: 'mine',       label: 'My Tasks',   icon: UserCheck },
-    // { id: 'completed',  label: 'Completed (30d)', icon: CheckCircle2 }, // Post-sprint
+    ...(isAdmin ? [{ id: 'all', label: 'All Tasks', icon: FileText }] : []),
   ]
 
   return (
@@ -424,7 +486,9 @@ export default function BackofficeQueuePage() {
           const count = t.id === 'unassigned'
             ? rawItems.filter(i => !i.assignee).length
             : t.id === 'mine'
-            ? rawItems.filter(i => i.assignee === user?.sub).length
+            ? rawItems.filter(i => i.assignee === currentUserSubject).length
+            : t.id === 'all'
+            ? rawItems.length
             : null
 
           return (
@@ -461,10 +525,14 @@ export default function BackofficeQueuePage() {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <CheckCircle2 size={36} className="text-gray-300 mb-3" />
             <p className="text-sm font-medium text-gray-600">
-              {tab === 'unassigned' ? 'No unassigned tasks' : 'No tasks assigned to you'}
+              {tab === 'unassigned' ? 'No unassigned tasks'
+                : tab === 'all' ? 'No tasks in the system'
+                : 'No tasks assigned to you'}
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              {tab === 'unassigned' ? 'All tasks have been claimed' : 'Claim tasks from the Unassigned tab'}
+              {tab === 'unassigned' ? 'All tasks have been claimed'
+                : tab === 'all' ? 'Submit a form to create a review task'
+                : 'Claim tasks from the Unassigned tab'}
             </p>
           </div>
         ) : (
@@ -484,7 +552,8 @@ export default function BackofficeQueuePage() {
                 <TaskRow
                   key={task.taskId}
                   task={task}
-                  currentUserSubject={user?.sub}
+                  currentUserSubject={currentUserSubject}
+                  isAdmin={isAdmin}
                   onAction={handleAction}
                 />
               ))}

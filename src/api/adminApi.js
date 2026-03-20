@@ -75,11 +75,11 @@ export const updateProduct = (id, payload) =>
 export const deactivateProduct = (id) =>
   api.delete(`/api/admin/products/${id}`).then(unwrap);
 
-export const linkCategory = (productId, payload) =>
-  api.post(`/api/admin/products/${productId}/categories`, payload).then(unwrap);
+export const addDocumentType = (productId, payload) =>
+  api.post(`/api/admin/products/${productId}/document-types`, payload).then(unwrap);
 
-export const unlinkCategory = (productId, categoryId) =>
-  api.delete(`/api/admin/products/${productId}/categories/${categoryId}`).then(unwrap);
+export const removeDocumentType = (productId, docTypeId) =>
+  api.delete(`/api/admin/products/${productId}/document-types/${docTypeId}`).then(unwrap);
 
 export const getWorkflowDefinitions = () =>
   api.get('/api/admin/products/workflow-definitions').then(unwrap);
@@ -153,6 +153,12 @@ export const updateCustomer = (id, payload) =>
 export const deactivateCustomer = (id) =>
   api.delete(`/api/admin/customers/${id}`).then(unwrap);
 
+export const addEnrollment = (customerId, payload) =>
+  api.post(`/api/admin/customers/${customerId}/enrollments`, payload).then(unwrap);
+
+export const removeEnrollment = (customerId, enrollmentId) =>
+  api.delete(`/api/admin/customers/${customerId}/enrollments/${enrollmentId}`).then(unwrap);
+
 // ── DocuSign Integration Config ────────────────────────────────────────────
 export const getDocuSignConfig = () =>
   api.get('/api/admin/integrations/docusign').then(unwrap);
@@ -212,6 +218,81 @@ export const removePermissionFromRole = (roleId, permissionCode) =>
  */
 export const applyBundleToRole = (roleId, bundleId) =>
   api.post(`/api/admin/roles/${roleId}/bundles/${bundleId}`).then(unwrap);
+
+// ── Cases ─────────────────────────────────────────────────────────────────
+
+export const listCases = (params = {}) =>
+  api.get('/api/admin/cases', { params }).then(unwrap);
+
+export const getCase = (id) =>
+  api.get(`/api/admin/cases/${id}`).then(unwrap);
+
+export const createCase = (payload) =>
+  api.post('/api/admin/cases', payload).then(unwrap);
+
+export const updateCaseStatus = (id, payload) =>
+  api.patch(`/api/admin/cases/${id}/status`, payload).then(unwrap);
+
+export const linkCaseDocument = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/link`, payload).then(unwrap);
+
+export const waiveCaseItem = (caseId, itemId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/waive`, payload).then(unwrap);
+
+export const addCaseNote = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/notes`, payload).then(unwrap);
+
+export const cancelCase = (caseId) =>
+  api.post(`/api/admin/cases/${caseId}/cancel`).then(unwrap);
+
+export const deleteCase = (caseId) =>
+  api.delete(`/api/admin/cases/${caseId}`).then(unwrap);
+
+// ── Notifications ─────────────────────────────────────────────────────────
+
+export const getNotifications = (all = false) =>
+  api.get('/api/notifications', { params: { all } }).then(unwrap);
+
+export const getUnreadCount = () =>
+  api.get('/api/notifications/count').then(unwrap);
+
+export const markNotificationRead = (id) =>
+  api.patch(`/api/notifications/${id}/read`).then(unwrap);
+
+export const markAllNotificationsRead = () =>
+  api.post('/api/notifications/read-all').then(unwrap);
+
+export const getNotificationPreferences = () =>
+  api.get('/api/notifications/preferences').then(unwrap);
+
+export const setNotificationPreference = (payload) =>
+  api.post('/api/notifications/preferences', payload).then(unwrap);
+
+export const getEmailTemplates = () =>
+  api.get('/api/notifications/email-templates').then(unwrap);
+
+export const getEmailTemplate = (id) =>
+  api.get(`/api/notifications/email-templates/${id}`).then(unwrap);
+
+export const updateEmailTemplate = (id, payload) =>
+  api.put(`/api/notifications/email-templates/${id}`, payload).then(unwrap);
+
+// ── OCR Templates ─────────────────────────────────────────────────────────
+
+export const getOcrTemplates = () =>
+  api.get('/api/admin/ocr-templates').then(unwrap);
+
+export const getOcrTemplate = (id) =>
+  api.get(`/api/admin/ocr-templates/${id}`).then(unwrap);
+
+export const createOcrTemplate = (payload) =>
+  api.post('/api/admin/ocr-templates', payload).then(unwrap);
+
+export const updateOcrTemplate = (id, payload) =>
+  api.put(`/api/admin/ocr-templates/${id}`, payload).then(unwrap);
+
+export const deleteOcrTemplate = (id) =>
+  api.delete(`/api/admin/ocr-templates/${id}`).then(unwrap);
 
 /** GET /api/admin/permissions — list all 24 permissions grouped by module */
 export const getPermissions = () =>

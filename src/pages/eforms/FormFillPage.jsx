@@ -14,6 +14,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, Users, FileText,
 } from 'lucide-react'
 import { useFormSchema, useSubmission, useSubmitForm } from '../../hooks/useEForms'
+import toast from 'react-hot-toast'
 import FormRenderer from '../../components/eforms/renderer/FormRenderer'
 import PartySearch from '../../components/common/PartySearch'
 
@@ -93,14 +94,20 @@ function PartyStep({ selectedParty, onSelect, onNext }) {
 }
 
 // ── Step 2: Review panel ──────────────────────────────────────────────────────
-function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, submissionId, onBack, onSuccess }) {
+function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, submissionId, caseId, checklistItemId, onBack, onSuccess }) {
   const submitMutation = useSubmitForm()
 
   const handleFinalSubmit = () => {
+    // Include case context in submission data so it can be used
+    // to auto-link the document after workflow approval
+    const enrichedData = { ...formData }
+    if (caseId) enrichedData._caseId = caseId
+    if (checklistItemId) enrichedData._checklistItemId = checklistItemId
+
     submitMutation.mutate(
       {
         formKey,
-        submissionData: formData,
+        submissionData: enrichedData,
         draft: false,
         ...(partyContext?.partyExternalId && { partyExternalId: partyContext.partyExternalId }),
         ...(submissionId && { existingSubmissionId: submissionId }),
@@ -216,9 +223,12 @@ export default function FormFillPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
-  const submissionId = searchParams.get('submission')
+  const submissionId    = searchParams.get('submission')
+  const caseId          = searchParams.get('caseId')
+  const checklistItemId = searchParams.get('checklistItemId')
+  const partyRef        = searchParams.get('partyRef')
 
-  const [step,          setStep]          = useState(0)   // 0=party, 1=fill, 2=review
+  const [step,          setStep]          = useState(caseId ? 1 : 0)   // skip party step if case context provides it
   const [selectedParty, setSelectedParty] = useState(null)
   const [filledData,    setFilledData]    = useState({})  // captured from FormRenderer on review
 
@@ -229,7 +239,12 @@ export default function FormFillPage() {
 
   // Called after the final API submit in step 2
   const handleSubmitSuccess = () => {
-    navigate('/eforms/submissions/mine')
+    if (caseId) {
+      toast.success('Form submitted — it will appear in the case checklist after approval')
+      navigate('/cases')
+    } else {
+      navigate('/eforms/submissions/mine')
+    }
   }
 
   // Called by FormRenderer when all fields are valid — advance to review step
@@ -274,9 +289,11 @@ export default function FormFillPage() {
   const partyContext = selectedParty
     ? {
         partyId:          selectedParty.id,
-        partyExternalId:  selectedParty.externalId,
+        partyExternalId:  selectedParty.externalId || selectedParty.customerRef,
         partyDisplayName: selectedParty.displayName,
       }
+    : partyRef
+    ? { partyExternalId: partyRef }
     : {}
 
   return (
@@ -363,6 +380,8 @@ export default function FormFillPage() {
               partyContext={partyContext}
               formKey={formKey}
               submissionId={submissionId}
+              caseId={caseId}
+              checklistItemId={checklistItemId}
               onBack={() => setStep(1)}
               onSuccess={handleSubmitSuccess}   /* ← navigate after API call */
             />

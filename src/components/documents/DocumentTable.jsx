@@ -156,7 +156,7 @@ function DeleteButton({ doc, onDelete }) {
 const COL_SPAN = 8
 const PAGE_SIZE = 20
 
-export default function DocumentTable() {
+export default function DocumentTable({ customerFilter = '' }) {
   const qc = useQueryClient()
   const [search, setSearch]     = useState('')
   const debouncedSearch         = useDebounce(search, 350)
@@ -164,22 +164,22 @@ export default function DocumentTable() {
   const [sort,   setSort]       = useState({ field: 'createdAt', dir: 'desc' })
 
   // Sprint-D: controls which document is open in the viewer modal.
-  // Must be inside the component — hooks cannot be called at module level.
   const [viewingId, setViewingId] = useState(null)
 
   useEffect(() => {
     setPage(0)
-  }, [debouncedSearch])
+  }, [debouncedSearch, customerFilter])
 
   const queryParams = {
     page,
     size: PAGE_SIZE,
     sort: `${sort.field},${sort.dir}`,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(customerFilter  ? { partyExternalId: customerFilter } : {}),
   }
 
   const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
-    queryKey:        ['documents', { ...queryParams, search: debouncedSearch }],
+    queryKey:        ['documents', { ...queryParams, search: debouncedSearch, customer: customerFilter }],
     queryFn:         () => listDocuments(queryParams),
     placeholderData: (prev) => prev,
     throwOnError:    false,

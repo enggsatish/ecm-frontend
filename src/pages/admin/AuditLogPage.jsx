@@ -16,7 +16,7 @@
  * same crash if other JDBC types (Timestamp, UUID) come through unexpectedly.
  */
 import { useState } from 'react'
-import { ClipboardList } from 'lucide-react'
+import { ClipboardList, ChevronDown } from 'lucide-react'
 import { useAuditLog } from '../../hooks/useAdmin'
 
 const EVENTS = [
@@ -116,6 +116,87 @@ function outcomeBadge(outcome) {
   }
 }
 
+// ── Expandable Audit Row ──────────────────────────────────────────────────────
+
+function AuditRow({ row }) {
+  const [expanded, setExpanded] = useState(false)
+  const pl = parsePayload(row.payload)
+  const outcome = safeStr(pl.outcome)
+  const errorDetail = safeStr(pl.error)
+  const resourceId = safeStr(row.resource_id)
+  const userEmail = safeStr(row.user_email)
+  const entraId = safeStr(row.entra_object_id)
+  const eventType = safeStr(row.event_type)
+  const resourceType = safeStr(row.resource_type)
+  const severity = safeStr(row.severity)
+  const ip = safeStr(row.ip_address)
+
+  return (
+    <>
+      <tr onClick={() => setExpanded(v => !v)}
+        className="hover:bg-gray-50 transition-colors cursor-pointer">
+        <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap tabular-nums">
+          {formatDateTime(row.created_at)}
+        </td>
+        <td className="px-4 py-2.5 text-xs text-gray-700 max-w-[140px] truncate" title={userEmail ?? entraId ?? ''}>
+          {userEmail ?? entraId ?? '—'}
+        </td>
+        <td className="px-4 py-2.5">
+          <span className="text-xs font-mono bg-gray-100 text-gray-700 rounded px-1.5 py-0.5 whitespace-nowrap">
+            {eventType ?? '—'}
+          </span>
+        </td>
+        <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+          {resourceType ?? '—'}
+          {resourceId ? <span className="text-gray-400 ml-1">#{resourceId.substring(0, 8)}</span> : null}
+        </td>
+        <td className="px-4 py-2.5 text-xs">
+          <span className={outcomeBadge(outcome)}>{outcome ?? '—'}</span>
+        </td>
+        <td className="px-4 py-2.5">
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${severityBadge(severity)}`}>
+            {severity ?? 'INFO'}
+          </span>
+        </td>
+        <td className="px-4 py-2.5 text-xs text-gray-400 font-mono whitespace-nowrap">{ip ?? '—'}</td>
+        <td className="px-4 py-2.5">
+          <ChevronDown size={14} className={`text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={8} className="px-6 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs">
+              <div><span className="text-gray-500 font-medium">User:</span> <span className="text-gray-700">{userEmail ?? '—'}</span></div>
+              <div><span className="text-gray-500 font-medium">Entra ID:</span> <span className="text-gray-700 font-mono">{entraId ?? '—'}</span></div>
+              <div><span className="text-gray-500 font-medium">Event:</span> <span className="text-gray-700">{eventType}</span></div>
+              <div><span className="text-gray-500 font-medium">Resource:</span> <span className="text-gray-700">{resourceType} {resourceId ? `#${resourceId}` : ''}</span></div>
+              <div><span className="text-gray-500 font-medium">IP:</span> <span className="text-gray-700 font-mono">{ip ?? '—'}</span></div>
+              <div><span className="text-gray-500 font-medium">Severity:</span> <span className="text-gray-700">{severity}</span></div>
+              {errorDetail && (
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Error Detail:</span>
+                  <pre className="mt-1 text-xs text-red-600 bg-red-50 rounded-lg p-2 overflow-auto max-h-32 whitespace-pre-wrap break-all">
+                    {errorDetail}
+                  </pre>
+                </div>
+              )}
+              {Object.keys(pl).length > 0 && (
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Full Payload:</span>
+                  <pre className="mt-1 text-xs text-gray-600 bg-gray-100 rounded-lg p-2 overflow-auto max-h-40 whitespace-pre-wrap break-all">
+                    {JSON.stringify(pl, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AuditLogPage() {
@@ -202,7 +283,7 @@ export default function AuditLogPage() {
           <table className="w-full text-sm min-w-[860px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Time', 'User', 'Event', 'Resource', 'Outcome', 'Severity', 'IP', 'Error Detail'].map(h => (
+                {['Time', 'User', 'Event', 'Resource', 'Outcome', 'Severity', 'IP', ''].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>
                 ))}
               </tr>
@@ -235,82 +316,9 @@ export default function AuditLogPage() {
                 </tr>
               )}
 
-              {rows.map((row, i) => {
-                // Parse the JSONB payload — handles PGobject envelope
-                const pl = parsePayload(row.payload)
-                const outcome = safeStr(pl.outcome)
-                const errorDetail = safeStr(pl.error)
-                const resourceId = safeStr(row.resource_id)
-                const userEmail = safeStr(row.user_email)
-                const entraId = safeStr(row.entra_object_id)
-                const eventType = safeStr(row.event_type)
-                const resourceType = safeStr(row.resource_type)
-                const severity = safeStr(row.severity)
-                const ip = safeStr(row.ip_address)
-
-                return (
-                  <tr key={row.id ?? i} className="hover:bg-gray-50 transition-colors">
-
-                    {/* Time */}
-                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap tabular-nums">
-                      {formatDateTime(row.created_at)}
-                    </td>
-
-                    {/* User */}
-                    <td
-                      className="px-4 py-2.5 text-xs text-gray-700 max-w-[140px] truncate"
-                      title={userEmail ?? entraId ?? ''}
-                    >
-                      {userEmail ?? entraId ?? '—'}
-                    </td>
-
-                    {/* Event */}
-                    <td className="px-4 py-2.5">
-                      <span className="text-xs font-mono bg-gray-100 text-gray-700 rounded px-1.5 py-0.5 whitespace-nowrap">
-                        {eventType ?? '—'}
-                      </span>
-                    </td>
-
-                    {/* Resource */}
-                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
-                      {resourceType ?? '—'}
-                      {resourceId
-                        ? <span className="text-gray-400 ml-1">#{resourceId.substring(0, 8)}</span>
-                        : null}
-                    </td>
-
-                    {/* Outcome — extracted from parsed payload */}
-                    <td className="px-4 py-2.5 text-xs">
-                      <span className={outcomeBadge(outcome)}>
-                        {outcome ?? '—'}
-                      </span>
-                    </td>
-
-                    {/* Severity */}
-                    <td className="px-4 py-2.5">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${severityBadge(severity)}`}>
-                        {severity ?? 'INFO'}
-                      </span>
-                    </td>
-
-                    {/* IP */}
-                    <td className="px-4 py-2.5 text-xs text-gray-400 font-mono whitespace-nowrap">
-                      {ip ?? '—'}
-                    </td>
-
-                    {/* Error detail — only shown when payload.error is present */}
-                    <td
-                      className="px-4 py-2.5 text-xs max-w-[200px] truncate"
-                      title={errorDetail ?? ''}
-                    >
-                      {errorDetail
-                        ? <span className="text-red-400">{errorDetail}</span>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
-
-                  </tr>
-                )
-              })}
+              {rows.map((row, i) => (
+                <AuditRow key={row.id ?? i} row={row} />
+              ))}
 
             </tbody>
           </table>

@@ -69,7 +69,6 @@ export default function FormDesignerPage() {
   }, [isNew, definition]);
 
   // ── Build payload from store ──────────────────────────────────────────────
-  // NOTE: backend DTOs use productTypeCode / formTypeCode (not productType / formType).
   // formKey is @NotBlank on the backend — auto-derive from name if designer left it blank.
   const buildPayload = () => {
   const derivedFormKey =
@@ -97,11 +96,10 @@ export default function FormDesignerPage() {
     name:            meta.name,
     description:     meta.description     || undefined,
     formKey:         derivedFormKey        || undefined,
-    productTypeCode: meta.productType      || undefined,
-    formTypeCode:    meta.formType         || undefined,
+    documentCategoryId: meta.documentCategoryId || undefined,
     tags:            meta.tags?.length ? meta.tags : undefined,
     schema,
-    workflowConfig,                                  // ← NEW
+    workflowConfig,
   };
 };
 

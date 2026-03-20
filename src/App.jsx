@@ -38,9 +38,12 @@ const NotificationPreferencesPage = lazy(() => import('./pages/admin/Notificatio
 const EFormsPage           = lazy(() => import('./pages/eforms/EFormsPage'))
 const FormFillPage         = lazy(() => import('./pages/eforms/FormFillPage'))
 const MySubmissionsPage    = lazy(() => import('./pages/eforms/MySubmissionsPage'))
-const ReviewQueuePage      = lazy(() => import('./pages/eforms/ReviewQueuePage'))
+const OcrTemplatesPage     = lazy(() => import('./pages/admin/OcrTemplatesPage'))
 const FormDesignerListPage = lazy(() => import('./pages/eforms/FormDesignerListPage'))
 const FormDesignerPage     = lazy(() => import('./pages/eforms/FormDesignerPage'))
+
+// ── Cases ─────────────────────────────────────────────────────────────────────
+const CasesPage            = lazy(() => import('./pages/cases/CasesPage'))
 
 // ── Other pages ───────────────────────────────────────────────────────────────
 const BackofficeQueuePage  = lazy(() => import('./pages/backoffice/BackofficeQueuePage'))
@@ -111,6 +114,12 @@ function AppRoutes() {
               </RoleGuard>
             } />
 
+            <Route path="/cases" element={
+              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
+                <CasesPage />
+              </RoleGuard>
+            } />
+
             <Route path="/workflow" element={
               <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
                 <WorkflowPage />
@@ -140,6 +149,7 @@ function AppRoutes() {
               <Route path="product-lines" element={<ProductLinesPage />} />
               <Route path="audit"         element={<AuditLogPage />} />
               <Route path="roles"         element={<RolesPage />} />          {/* Sprint G */}
+              <Route path="ocr-templates" element={<OcrTemplatesPage />} />
               <Route path="integrations/docusign" element={<DocuSignSettingsPage />} />
               <Route path="notifications" element={<NotificationPreferencesPage />} />
             </Route>
@@ -148,12 +158,6 @@ function AppRoutes() {
             <Route path="/eforms"                      element={<EFormsPage />} />
             <Route path="/eforms/fill/:formKey"        element={<FormFillPage />} />
             <Route path="/eforms/submissions/mine"     element={<MySubmissionsPage />} />
-
-            <Route path="/eforms/submissions/queue" element={
-              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
-                <ReviewQueuePage />
-              </RoleGuard>
-            } />
 
             <Route path="/eforms/designer/list" element={
               <RoleGuard roles={ROLE_GROUPS.DESIGN}>

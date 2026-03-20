@@ -3,8 +3,14 @@
  * Route: /eforms/designer/list
  * Lists all form definitions with filters, actions, status badges.
  * Role: ECM_ADMIN, ECM_DESIGNER
+ *
+ * FIX: ActionMenu now uses fixed positioning (portal-style) calculated from
+ * the button's getBoundingClientRect(). This avoids the overflow:hidden
+ * clipping that occurs when the dropdown is rendered inside the table container.
+ * The table wrapper keeps overflow-hidden for visual correctness (rounded corners
+ * clip the table header); the dropdown escapes it by using position:fixed.
  */
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Copy, Archive, Eye, Edit, Clock, MoreVertical } from 'lucide-react';
 import { useFormDefinitions, useCloneForm, useArchiveForm } from '../../hooks/useEForms';
@@ -12,7 +18,6 @@ import StatusBadge from '../../components/eforms/StatusBadge';
 import { formatDistanceToNow } from 'date-fns';
 
 const STATUS_FILTERS  = ['ALL', 'DRAFT', 'PUBLISHED', 'ARCHIVED', 'DEPRECATED'];
-const PRODUCT_TYPES   = ['ALL', 'MORTGAGE', 'AUTO_LOAN', 'PERSONAL_LOAN', 'CREDIT_CARD', 'BUSINESS_LOAN'];
 
 function safeFormatDate(dateStr) {
   try {
@@ -25,19 +30,18 @@ function safeFormatDate(dateStr) {
 export default function FormDesignerListPage() {
   const navigate = useNavigate();
   const [statusFilter,  setStatusFilter]  = useState('ALL');
-  const [productFilter, setProductFilter] = useState('ALL');
   const [search,        setSearch]        = useState('');
   const [openMenuId,    setOpenMenuId]    = useState(null);
+  // Tracks the pixel position of the open dropdown so ActionMenu can use fixed positioning
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
 
   const params = {};
-  if (statusFilter  !== 'ALL') params.status      = statusFilter;
-  if (productFilter !== 'ALL') params.productType = productFilter;
+  if (statusFilter  !== 'ALL') params.status = statusFilter;
 
   const { data: rawDefinitions, isLoading } = useFormDefinitions(params);
   const cloneMutation   = useCloneForm();
   const archiveMutation = useArchiveForm();
 
-  // Guard: hooks return T[] but add Array.isArray safety for any edge case
   const definitions = Array.isArray(rawDefinitions) ? rawDefinitions : [];
 
   const filtered = definitions.filter((d) => {
@@ -45,8 +49,7 @@ export default function FormDesignerListPage() {
     const q = search.toLowerCase();
     return (
       d.name?.toLowerCase().includes(q) ||
-      d.formKey?.toLowerCase().includes(q) ||
-      d.formType?.toLowerCase().includes(q)
+      d.formKey?.toLowerCase().includes(q)
     );
   });
 
@@ -60,6 +63,24 @@ export default function FormDesignerListPage() {
       case 'history': navigate(`/eforms/designer/${def.id}?tab=versions`); break;
       default: break;
     }
+  };
+
+  /**
+   * Opens the action menu for a row.
+   * Uses getBoundingClientRect() on the trigger button so ActionMenu can
+   * position itself using fixed coordinates — escaping any overflow:hidden parent.
+   */
+  const handleOpenMenu = (e, id) => {
+    if (openMenuId === id) {
+      setOpenMenuId(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenuPos({
+      top:   rect.bottom + window.scrollY + 4,   // 4px below the button
+      right: window.innerWidth - rect.right,      // align right edge to button right
+    });
+    setOpenMenuId(id);
   };
 
   return (
@@ -109,20 +130,10 @@ export default function FormDesignerListPage() {
           ))}
         </div>
 
-        {/* Product type filter */}
-        <select
-          value={productFilter}
-          onChange={(e) => setProductFilter(e.target.value)}
-          className="text-sm border border-gray-300 rounded-lg px-3 py-2
-                     focus:outline-none focus:border-indigo-400"
-        >
-          {PRODUCT_TYPES.map((pt) => (
-            <option key={pt} value={pt}>{pt === 'ALL' ? 'All Products' : pt.replace(/_/g, ' ')}</option>
-          ))}
-        </select>
       </div>
 
-      {/* Table */}
+      {/* Table — overflow-hidden kept for rounded corner clipping of thead background.
+          The ActionMenu escapes it via fixed positioning (portal-style). */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
@@ -175,17 +186,14 @@ export default function FormDesignerListPage() {
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className="text-xs text-gray-400">{safeFormatDate(def.updatedAt)}</span>
                   </td>
-                  <td className="px-4 py-3 relative">
+                  {/* No relative positioning here — ActionMenu uses fixed coords */}
+                  <td className="px-4 py-3">
                     <button
-                      onClick={() => setOpenMenuId(openMenuId === def.id ? null : def.id)}
+                      onClick={(e) => handleOpenMenu(e, def.id)}
                       className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"
                     >
                       <MoreVertical className="w-4 h-4" />
                     </button>
-
-                    {openMenuId === def.id && (
-                      <ActionMenu def={def} onAction={handleAction} onClose={() => setOpenMenuId(null)} />
-                    )}
                   </td>
                 </tr>
               ))}
@@ -195,11 +203,33 @@ export default function FormDesignerListPage() {
       </div>
 
       <p className="text-xs text-gray-400 mt-3">{filtered.length} form{filtered.length !== 1 ? 's' : ''}</p>
+
+      {/* ActionMenu rendered here — OUTSIDE the overflow-hidden table container.
+          Uses fixed positioning so it's never clipped by any ancestor. */}
+      {openMenuId && (() => {
+        const def = filtered.find(d => d.id === openMenuId);
+        return def ? (
+          <ActionMenu
+            def={def}
+            pos={menuPos}
+            onAction={handleAction}
+            onClose={() => setOpenMenuId(null)}
+          />
+        ) : null;
+      })()}
     </div>
   );
 }
 
-function ActionMenu({ def, onAction, onClose }) {
+/**
+ * ActionMenu — uses fixed positioning to escape any overflow:hidden ancestor.
+ *
+ * Receives {top, right} pixel coordinates calculated from the trigger button's
+ * getBoundingClientRect(). Renders at the root of the viewport stacking context.
+ *
+ * The backdrop div (fixed inset-0) closes the menu on any outside click.
+ */
+function ActionMenu({ def, pos, onAction, onClose }) {
   const isDraft     = def.status === 'DRAFT';
   const isPublished = def.status === 'PUBLISHED';
 
@@ -213,8 +243,14 @@ function ActionMenu({ def, onAction, onClose }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-10" onClick={onClose} />
-      <div className="absolute right-0 top-8 z-20 w-44 bg-white rounded-lg border border-gray-200 shadow-lg py-1 overflow-hidden">
+      {/* Backdrop — closes menu on outside click */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+
+      {/* Menu panel — fixed so it's never clipped by overflow:hidden */}
+      <div
+        className="fixed z-50 w-44 bg-white rounded-lg border border-gray-200 shadow-lg py-1"
+        style={{ top: pos.top, right: pos.right }}
+      >
         {items.map(({ action, label, icon: Icon }) => (
           <button
             key={action}

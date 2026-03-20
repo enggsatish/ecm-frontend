@@ -1,13 +1,13 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { useOktaAuth }          from '@okta/okta-react'
 import { useState, useEffect }  from 'react'
 import {
   LayoutDashboard, FolderOpen, ClipboardList,
-  CheckSquare, Settings, LogOut, Building2,
+  CheckSquare, Settings, Building2,
   PenLine, FileCheck, Inbox, ChevronDown,
   Users, FolderTree, Package, Archive, GitMerge,
   Layers, GitBranch, ShieldCheck, Link2,
-  Bell, Shield,
+  Bell, Shield, ScanLine, UserCircle, Briefcase,
+  Cog, UserCog, Network,
 } from 'lucide-react'
 import useUserStore     from '../../store/userStore'
 import { ROLES, ROLE_GROUPS } from '../../utils/roles'
@@ -16,25 +16,59 @@ import { ROLES, ROLE_GROUPS } from '../../utils/roles'
 const EFORMS_CHILDREN = [
   { path: '/eforms',                    label: 'Overview',      icon: ClipboardList, roles: null,                  exact: true },
   { path: '/eforms/submissions/mine',   label: 'My Submissions',icon: FileCheck,     roles: null },
-  { path: '/eforms/submissions/queue',  label: 'Review Queue',  icon: Inbox,         roles: ROLE_GROUPS.OPERATIONS },
   { path: '/eforms/designer/list',      label: 'Form Designer', icon: PenLine,       roles: ROLE_GROUPS.DESIGN },
 ]
 
-// ─── Admin sub-nav ────────────────────────────────────────────────────────────
-const ADMIN_CHILDREN = [
-  { path: '/admin/users',                   label: 'Users',              icon: Users,       roles: [ROLES.ADMIN] },
-  { path: '/admin/departments',             label: 'Departments',        icon: Building2,   roles: [ROLES.ADMIN] },
-  { path: '/admin/categories',              label: 'Categories',         icon: FolderTree,  roles: [ROLES.ADMIN] },
-  { path: '/admin/products',                label: 'Products',           icon: Package,     roles: [ROLES.ADMIN] },
-  { path: '/admin/retention',               label: 'Retention',          icon: Archive,     roles: [ROLES.ADMIN] },
-  { path: '/admin/settings',                label: 'Settings',           icon: Settings,    roles: [ROLES.ADMIN] },
-  { path: '/admin/segments',                label: 'Segments',           icon: Layers,      roles: [ROLES.ADMIN] },
-  { path: '/admin/product-lines',           label: 'Product Lines',      icon: GitBranch,   roles: [ROLES.ADMIN] },
-  { path: '/admin/audit',                   label: 'Audit Log',          icon: ShieldCheck, roles: [ROLES.ADMIN] },
-  { path: '/admin/roles',                   label: 'Roles & Permissions',icon: Shield,      roles: [ROLES.ADMIN] },
-  { path: '/admin/integrations/docusign',   label: 'DocuSign',           icon: Link2,       roles: [ROLES.ADMIN] },
-  { path: '/admin/notifications',           label: 'Notification Prefs', icon: Bell,        roles: [ROLES.ADMIN] },
+// ─── Admin sub-groups (each collapsible) ─────────────────────────────────────
+const ADMIN_GROUPS = [
+  {
+    key: 'people',    label: 'People & Access', icon: UserCog,
+    children: [
+      { path: '/admin/users',        label: 'Users',              icon: Users,     roles: [ROLES.ADMIN] },
+      { path: '/admin/roles',        label: 'Roles & Permissions',icon: Shield,    roles: [ROLES.ADMIN] },
+      { path: '/admin/departments',  label: 'Departments',        icon: Building2, roles: [ROLES.ADMIN] },
+    ],
+  },
+  {
+    key: 'customers', label: 'Customers', icon: UserCircle,
+    children: [
+      { path: '/admin/customers',    label: 'Customer Management', icon: UserCircle, roles: [ROLES.ADMIN] },
+    ],
+  },
+  {
+    key: 'catalogue', label: 'Product Catalogue', icon: Package,
+    children: [
+      { path: '/admin/segments',       label: 'Segments',      icon: Layers,    roles: [ROLES.ADMIN] },
+      { path: '/admin/product-lines',  label: 'Product Lines', icon: GitBranch, roles: [ROLES.ADMIN] },
+      { path: '/admin/products',       label: 'Products',      icon: Package,   roles: [ROLES.ADMIN] },
+      { path: '/admin/categories',     label: 'Categories',    icon: FolderTree,roles: [ROLES.ADMIN] },
+    ],
+  },
+  {
+    key: 'processing', label: 'Processing', icon: Cog,
+    children: [
+      { path: '/admin/ocr-templates',  label: 'OCR Templates',      icon: ScanLine, roles: [ROLES.ADMIN] },
+      { path: '/admin/retention',       label: 'Retention Policies', icon: Archive,  roles: [ROLES.ADMIN] },
+      { path: '/admin/notifications',   label: 'Notifications',      icon: Bell,     roles: [ROLES.ADMIN] },
+    ],
+  },
+  {
+    key: 'integrations', label: 'Integrations', icon: Network,
+    children: [
+      { path: '/admin/integrations/docusign', label: 'DocuSign', icon: Link2, roles: [ROLES.ADMIN] },
+    ],
+  },
+  {
+    key: 'system', label: 'System', icon: Settings,
+    children: [
+      { path: '/admin/settings',  label: 'Settings',  icon: Settings,    roles: [ROLES.ADMIN] },
+      { path: '/admin/audit',     label: 'Audit Log', icon: ShieldCheck, roles: [ROLES.ADMIN] },
+    ],
+  },
 ]
+
+// Flatten for route matching (used by NavGroup to detect if admin is active)
+const ADMIN_CHILDREN = ADMIN_GROUPS.flatMap(g => g.children)
 
 // ─── Top-level nav ────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
@@ -53,12 +87,17 @@ const NAV_ITEMS = [
     children: EFORMS_CHILDREN,
   },
   {
+    path: '/cases', icon: Briefcase, label: 'Cases',
+    roles: ROLE_GROUPS.OPERATIONS,
+  },
+  {
     path: '/backoffice/queue', icon: Inbox, label: 'Review Queue',
     roles: ROLE_GROUPS.OPERATIONS,
   },
   {
     path: '/workflow', icon: CheckSquare, label: 'My Tasks',
     roles: ROLE_GROUPS.OPERATIONS,
+    exact: true,
   },
   {
     path: '/workflow/designer', icon: GitMerge, label: 'Workflow Designer',
@@ -69,16 +108,9 @@ const NAV_ITEMS = [
     isGroup: true, groupKey: 'admin',
     roles: [ROLES.ADMIN],
     children: ADMIN_CHILDREN,
+    subGroups: ADMIN_GROUPS,
   },
 ]
-
-const ROLE_LABELS = {
-  [ROLES.ADMIN]:      { label: 'Admin',       bg: 'bg-accent-500/20 text-accent-300' },
-  [ROLES.DESIGNER]:   { label: 'Designer',    bg: 'bg-accent-500/20 text-accent-300' },
-  [ROLES.BACKOFFICE]: { label: 'Back Office', bg: 'bg-primary-700/60 text-primary-200' },
-  [ROLES.REVIEWER]:   { label: 'Reviewer',    bg: 'bg-primary-700/60 text-primary-200' },
-  [ROLES.READONLY]:   { label: 'Read Only',   bg: 'bg-primary-700/60 text-primary-200' },
-}
 
 function hasRole(userRoles = [], required) {
   if (!required) return true
@@ -87,7 +119,6 @@ function hasRole(userRoles = [], required) {
 
 export default function Sidebar() {
   const { user }     = useUserStore()
-  const { oktaAuth } = useOktaAuth()
   const location     = useLocation()
 
   const isInEForms = location.pathname.startsWith('/eforms')
@@ -99,18 +130,7 @@ export default function Sidebar() {
   useEffect(() => { if (isInEForms) setEformsOpen(true) }, [isInEForms])
   useEffect(() => { if (isInAdmin)  setAdminOpen(true)  }, [isInAdmin])
 
-  const handleLogout = async () => {
-    await oktaAuth.signOut({ postLogoutRedirectUri: window.location.origin })
-  }
-
   const visibleItems = NAV_ITEMS.filter(item => hasRole(user?.roles, item.roles))
-
-  const initials = user?.displayName
-    ?.split(' ')
-    .map(n => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2) ?? '?'
 
   const groupState = {
     eforms: { isOpen: eformsOpen, onToggle: () => setEformsOpen(v => !v) },
@@ -131,7 +151,7 @@ export default function Sidebar() {
             <span className="text-white font-bold text-base leading-none select-none">S</span>
           </div>
           <div>
-            <p className="font-bold text-white text-sm leading-tight tracking-wide">Servus</p>
+            <p className="font-bold text-white text-sm leading-tight tracking-wide">Enterprise</p>
             <p className="text-[10px] text-white/50 font-medium tracking-widest uppercase mt-0.5">
               Document Management
             </p>
@@ -140,41 +160,6 @@ export default function Sidebar() {
         <p className="mt-3 text-[10px] text-white/30 italic font-medium leading-relaxed">
           Feel good about your documents.
         </p>
-      </div>
-
-      {/* ── User profile ─────────────────────────────────────── */}
-      <div className="px-4 py-4 border-b border-white/10 mx-2 mt-2 rounded-xl bg-white/5">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-shrink-0">
-            <div className="w-9 h-9 rounded-full bg-accent-500
-                            flex items-center justify-center
-                            text-white text-sm font-bold
-                            ring-2 ring-accent-400/40">
-              {initials}
-            </div>
-            <div className="absolute bottom-0 right-0 w-2.5 h-2.5
-                            rounded-full bg-accent-400 border-2 border-primary-900" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-white truncate leading-tight">
-              {user?.displayName ?? 'Loading…'}
-            </p>
-            <p className="text-[11px] text-white/40 truncate mt-0.5">{user?.email ?? ''}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {user?.roles?.map(role => {
-            const { label, bg } = ROLE_LABELS[role] ?? {
-              label: role.replace('ECM_', ''),
-              bg: 'bg-white/10 text-white/60',
-            }
-            return (
-              <span key={role} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${bg}`}>
-                {label}
-              </span>
-            )
-          })}
-        </div>
       </div>
 
       {/* ── Navigation ───────────────────────────────────────── */}
@@ -199,6 +184,7 @@ export default function Sidebar() {
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.exact}
               className={({ isActive }) =>
                 `group flex items-center gap-3 px-3 py-2.5 rounded-lg
                  text-sm font-medium transition-all duration-150 relative
@@ -224,30 +210,23 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* ── Branch info ──────────────────────────────────────── */}
-      <div className="mx-3 mb-3 px-3 py-3 rounded-xl bg-white/5 border border-white/8">
-        <div className="flex items-center gap-2 text-white/40">
-          <Building2 className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="text-[10px] font-medium tracking-wide uppercase">
-            ABC Credit Union
-          </span>
+      {/* ── Platform info card ─────────────────────────────── */}
+      <div className="mx-3 mb-3 rounded-xl overflow-hidden"
+           style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%)' }}>
+        <div className="px-3.5 py-3 border border-white/8 rounded-xl">
+          <div className="flex items-center gap-2 mb-2">
+            <Shield className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />
+            <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">
+              ECM Platform
+            </span>
+          </div>
+          <p className="text-white/70 font-semibold text-xs leading-snug">
+            Secure Document Management
+          </p>
+          <p className="text-white/30 text-[10px] leading-relaxed mt-1">
+            Encrypted at rest. Role-based access control.
+          </p>
         </div>
-        <p className="text-[10px] text-white/25 mt-1 leading-relaxed">
-          Text to be updated.
-        </p>
-      </div>
-
-      {/* ── Sign out ─────────────────────────────────────────── */}
-      <div className="px-3 pb-5 border-t border-white/10 pt-3">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg
-                     text-sm text-white/50 hover:bg-white/8 hover:text-white/80
-                     transition-all duration-150 group"
-        >
-          <LogOut className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-          Sign Out
-        </button>
       </div>
     </aside>
   )
@@ -263,6 +242,10 @@ function NavGroup({ item, userRoles, isOpen, onToggle, currentPath }) {
   )
 
   if (visibleChildren.length === 0) return null
+
+  // Calculate total content height for the outer collapse
+  const hasSubGroups = item.subGroups && item.subGroups.length > 0
+  const totalHeight = hasSubGroups ? 2000 : visibleChildren.length * 44
 
   return (
     <div>
@@ -293,42 +276,115 @@ function NavGroup({ item, userRoles, isOpen, onToggle, currentPath }) {
       <div
         className="overflow-hidden transition-all duration-200 ease-in-out"
         style={{
-          maxHeight: isOpen ? `${visibleChildren.length * 44}px` : '0px',
+          maxHeight: isOpen ? `${totalHeight}px` : '0px',
           opacity: isOpen ? 1 : 0,
         }}
       >
-        <div className="relative ml-3 pl-4 mt-0.5 mb-0.5 space-y-0.5
-                        border-l border-white/10">
-          {visibleChildren.map(child => {
-            const ChildIcon = child.icon
-            const isActive = child.exact
-              ? currentPath === child.path
-              : currentPath === child.path || currentPath.startsWith(child.path + '/')
+        {hasSubGroups ? (
+          <div className="ml-3 pl-2 mt-0.5 mb-0.5 space-y-0.5 border-l border-white/10">
+            {item.subGroups.map(sg => (
+              <SubGroup
+                key={sg.key}
+                group={sg}
+                userRoles={userRoles}
+                currentPath={currentPath}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="relative ml-3 pl-4 mt-0.5 mb-0.5 space-y-0.5
+                          border-l border-white/10">
+            {visibleChildren.map(child => (
+              <ChildNavLink key={child.path} child={child} currentPath={currentPath} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
-            return (
-              <NavLink
-                key={child.path}
-                to={child.path}
-                end={child.exact}
-                className={`group flex items-center gap-2.5 px-2.5 py-2 rounded-lg
-                             text-xs font-medium transition-all duration-150 relative
-                             ${isActive
-                               ? 'bg-accent-500 text-white shadow-sm shadow-accent-900/30'
-                               : 'text-white/50 hover:bg-white/8 hover:text-white/90'
-                             }`}
-              >
-                {isActive && (
-                  <span className="absolute -left-4 top-1/2 -translate-y-1/2
-                                   w-2 h-px bg-accent-400" />
-                )}
-                <ChildIcon className={`w-3.5 h-3.5 flex-shrink-0
-                                       ${isActive ? 'text-white' : 'text-white/40 group-hover:text-white/70'}`} />
-                {child.label}
-              </NavLink>
-            )
-          })}
+// ─── Collapsible sub-group (within admin) ────────────────────────────────────
+function SubGroup({ group, userRoles, currentPath }) {
+  const visibleChildren = group.children.filter(child =>
+    hasRole(userRoles, child.roles)
+  )
+
+  const hasActiveChild = visibleChildren.some(child =>
+    currentPath === child.path || currentPath.startsWith(child.path + '/')
+  )
+
+  const [open, setOpen] = useState(hasActiveChild)
+
+  useEffect(() => { if (hasActiveChild) setOpen(true) }, [hasActiveChild])
+
+  if (visibleChildren.length === 0) return null
+
+  const GroupIcon = group.icon
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`group flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg
+                    text-[11px] font-semibold uppercase tracking-wider transition-all duration-150
+                    ${open
+                      ? 'text-white/70'
+                      : hasActiveChild
+                        ? 'text-accent-400'
+                        : 'text-white/30 hover:text-white/50'
+                    }`}
+      >
+        <GroupIcon className="w-3 h-3 flex-shrink-0" />
+        <span className="flex-1 text-left">{group.label}</span>
+        <ChevronDown
+          className={`w-3 h-3 transition-transform duration-200 flex-shrink-0
+                      ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      <div
+        className="overflow-hidden transition-all duration-200 ease-in-out"
+        style={{
+          maxHeight: open ? `${visibleChildren.length * 40}px` : '0px',
+          opacity: open ? 1 : 0,
+        }}
+      >
+        <div className="ml-2 pl-3 space-y-0.5 border-l border-white/5">
+          {visibleChildren.map(child => (
+            <ChildNavLink key={child.path} child={child} currentPath={currentPath} />
+          ))}
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── Shared child nav link ───────────────────────────────────────────────────
+function ChildNavLink({ child, currentPath }) {
+  const ChildIcon = child.icon
+  const isActive = child.exact
+    ? currentPath === child.path
+    : currentPath === child.path || currentPath.startsWith(child.path + '/')
+
+  return (
+    <NavLink
+      to={child.path}
+      end={child.exact}
+      className={`group flex items-center gap-2.5 px-2.5 py-2 rounded-lg
+                   text-xs font-medium transition-all duration-150 relative
+                   ${isActive
+                     ? 'bg-accent-500 text-white shadow-sm shadow-accent-900/30'
+                     : 'text-white/50 hover:bg-white/8 hover:text-white/90'
+                   }`}
+    >
+      {isActive && (
+        <span className="absolute -left-3 top-1/2 -translate-y-1/2
+                         w-2 h-px bg-accent-400" />
+      )}
+      <ChildIcon className={`w-3.5 h-3.5 flex-shrink-0
+                              ${isActive ? 'text-white' : 'text-white/40 group-hover:text-white/70'}`} />
+      {child.label}
+    </NavLink>
   )
 }

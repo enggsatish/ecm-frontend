@@ -14,18 +14,11 @@
  */
 import { useEFormsDesignerStore } from '../../../store/eformsStore';
 import { useWorkflowDefinitions } from '../../../hooks/useWorkflow';
+import { useCategories } from '../../../hooks/useAdmin';
 import { Loader2, AlertCircle, Zap, ZapOff } from 'lucide-react';
 
 // ─── Static option lists ──────────────────────────────────────────────────────
 
-const PRODUCT_TYPES = [
-  'MORTGAGE', 'AUTO_LOAN', 'PERSONAL_LOAN',
-  'CREDIT_CARD', 'BUSINESS_LOAN', 'INSURANCE',
-];
-const FORM_TYPES = [
-  'APPLICATION', 'KYC', 'AML', 'DISCLOSURE',
-  'CONSENT', 'AMENDMENT', 'CLAIM', 'OTHER',
-];
 const LAYOUTS = [
   { value: 'SINGLE_PAGE',  label: 'Single Page' },
   { value: 'MULTI_PAGE',   label: 'Multi Page (Wizard)' },
@@ -51,6 +44,8 @@ export default function FormSettingsPanel() {
     isLoading: wfLoading,
     isError: wfError,
   } = useWorkflowDefinitions();
+
+  const { data: categories = [] } = useCategories(true);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -130,34 +125,22 @@ export default function FormSettingsPanel() {
               placeholder="Short description..."
             />
           </Field>
+          <Field label="Document Category" hint="determines OCR template for approved documents">
+            <select
+              value={meta.documentCategoryId ?? ''}
+              onChange={(e) => updateMeta({ documentCategoryId: e.target.value ? Number(e.target.value) : null })}
+              className={inputCls}
+            >
+              <option value="">— No category —</option>
+              {(Array.isArray(categories) ? categories : []).filter(c => c.isActive !== false).map(c => (
+                <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+              ))}
+            </select>
+          </Field>
         </Section>
 
-        {/* ── Classification ────────────────────────────────────────────── */}
-        <Section title="Classification">
-          <Field label="Product Type">
-            <select
-              value={meta.productType}
-              onChange={(e) => updateMeta({ productType: e.target.value })}
-              className={inputCls}
-            >
-              <option value="">Select product type...</option>
-              {PRODUCT_TYPES.map((pt) => (
-                <option key={pt} value={pt}>{pt.replace(/_/g, ' ')}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Form Type">
-            <select
-              value={meta.formType}
-              onChange={(e) => updateMeta({ formType: e.target.value })}
-              className={inputCls}
-            >
-              <option value="">Select form type...</option>
-              {FORM_TYPES.map((ft) => (
-                <option key={ft} value={ft}>{ft.replace(/_/g, ' ')}</option>
-              ))}
-            </select>
-          </Field>
+        {/* ── Tags ──────────────────────────────────────────────────────── */}
+        <Section title="Tags">
           <Field label="Tags">
             <div className="flex flex-wrap gap-1 mb-1">
               {meta.tags.map((tag) => (

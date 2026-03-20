@@ -78,7 +78,7 @@ export default function DocumentUpload({ onUploadComplete }) {
   const [dragging,   setDragging]   = useState(false)
   const [fileStates, setFileStates] = useState([])
   const [uploading,  setUploading]  = useState(false)
-  const [showMeta,   setShowMeta]   = useState(false)
+  const [showMeta,   setShowMeta]   = useState(true)
 
   // ── Hierarchy selects (Sprint-C) ──────────────────────────────────────────
   const [segmentId,        setSegmentId]        = useState('')
@@ -148,7 +148,7 @@ export default function DocumentUpload({ onUploadComplete }) {
       productLineId:   productLineId || undefined,
       segmentCode:     selectedSegment?.segmentCode || undefined,
       productLineCode: selectedPl?.code || undefined,
-      partyExternalId: selectedParty?.externalId || undefined,
+      partyExternalId: selectedParty?.externalId || selectedParty?.customerRef || undefined,
     }
 
     let successCount = 0
@@ -315,7 +315,9 @@ export default function DocumentUpload({ onUploadComplete }) {
 
                 {/* Category */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Category</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Category <span className="text-blue-500">(drives OCR fields)</span>
+                  </label>
                   <select
                     value={categoryId}
                     onChange={e => setCategoryId(e.target.value)}

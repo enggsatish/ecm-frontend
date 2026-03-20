@@ -6,11 +6,12 @@
  *   browse — shows DocumentUpload (toggle) + DocumentTable
  *   search — shows DocumentSearchPanel (Sprint-E full-text search)
  *
- * Upload toggle and Search toggle live together in the page header action bar.
+ * Accepts ?customer=EXTERNAL_ID query param to pre-filter by customer.
  */
 import { useState } from 'react'
 import { Upload, X, Search } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import ErrorBoundary from '../../components/common/ErrorBoundary'
 import DocumentUpload from '../../components/documents/DocumentUpload'
 import DocumentTable from '../../components/documents/DocumentTable'
@@ -19,18 +20,23 @@ import DocumentSearchPanel from '../../components/documents/DocumentSearchPanel'
 export default function DocumentsPage() {
   const [showUpload, setShowUpload] = useState(false)
   const [mode, setMode] = useState('browse') // 'browse' | 'search'
+  const [searchParams, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
 
+  const customerFilter = searchParams.get('customer') || ''
+
   const handleUploadComplete = () => {
-    // Invalidate all document list queries so DocumentTable refreshes
     qc.invalidateQueries({ queryKey: ['documents'] })
-    // Keep panel open so user sees per-file "done" status
   }
 
   const handleToggleSearch = () => {
     setMode(m => m === 'search' ? 'browse' : 'search')
-    // Close upload panel when entering search mode
     if (mode !== 'search') setShowUpload(false)
+  }
+
+  const handleClearCustomer = () => {
+    searchParams.delete('customer')
+    setSearchParams(searchParams)
   }
 
   return (
@@ -45,7 +51,6 @@ export default function DocumentsPage() {
           </p>
         </div>
 
-        {/* Action buttons — Search toggle + Upload toggle */}
         <div className="flex items-center gap-2">
           <button
             onClick={handleToggleSearch}
@@ -78,12 +83,22 @@ export default function DocumentsPage() {
         </div>
       </div>
 
+      {/* ── Customer filter banner ──────────────────────────── */}
+      {customerFilter && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 rounded-lg border border-indigo-100">
+          <span className="text-sm text-indigo-800 font-medium">
+            Showing documents for customer: <span className="font-mono font-bold">{customerFilter}</span>
+          </span>
+          <button onClick={handleClearCustomer}
+            className="ml-auto text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+            <X size={14} /> Clear filter
+          </button>
+        </div>
+      )}
+
       {/* ── Search mode ───────────────────────────────────────── */}
       {mode === 'search' && (
-        <div
-          className="bg-white rounded-xl border border-gray-200 overflow-hidden"
-          style={{ minHeight: '60vh' }}
-        >
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ minHeight: '60vh' }}>
           <DocumentSearchPanel onClose={() => setMode('browse')} />
         </div>
       )}
@@ -91,16 +106,11 @@ export default function DocumentsPage() {
       {/* ── Browse mode ───────────────────────────────────────── */}
       {mode === 'browse' && (
         <>
-          {/* Upload panel (toggled) */}
           {showUpload && (
             <div className="bg-white rounded-xl border border-blue-100 shadow-sm p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-gray-700">Upload Documents</h2>
-                <button
-                  onClick={() => setShowUpload(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                  aria-label="Close upload panel"
-                >
+                <button onClick={() => setShowUpload(false)} className="text-gray-400 hover:text-gray-600" aria-label="Close upload panel">
                   <X size={16} />
                 </button>
               </div>
@@ -108,9 +118,8 @@ export default function DocumentsPage() {
             </div>
           )}
 
-          {/* Document list */}
           <ErrorBoundary>
-            <DocumentTable />
+            <DocumentTable customerFilter={customerFilter} />
           </ErrorBoundary>
         </>
       )}

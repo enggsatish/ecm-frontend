@@ -93,17 +93,8 @@ export const getAllSubmissions = async () => {
   return toArray(res.data)
 }
 
-export const getReviewQueue = async () => {
-  const res = await apiClient.get(`${BASE}/submissions/queue`)
-  return toArray(res.data)
-}
-
 export const getSubmission = (id) =>
   apiClient.get(`${BASE}/submissions/${id}`)
-
-/** Review action: { status, notes, assignedTo } */
-export const updateSubmissionStatus = (id, payload) =>
-  apiClient.patch(`${BASE}/submissions/${id}/status`, payload)
 
 export const withdrawSubmission = (id) =>
   apiClient.post(`${BASE}/submissions/${id}/withdraw`)

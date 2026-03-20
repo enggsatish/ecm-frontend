@@ -135,21 +135,6 @@ function FormCard({ form, onFill }) {
           <p className="text-xs text-gray-500 line-clamp-2 mb-3">{form.description}</p>
         )}
 
-        {(form.productType || form.formType) && (
-          <div className="flex flex-wrap gap-1 mb-4">
-            {form.productType && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                {form.productType.replace(/_/g, ' ')}
-              </span>
-            )}
-            {form.formType && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                {form.formType}
-              </span>
-            )}
-          </div>
-        )}
-
         <button
           onClick={onFill}
           className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium

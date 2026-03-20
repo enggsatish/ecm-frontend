@@ -35,7 +35,7 @@ export function useCurrentUser() {
     queryKey: ['currentUser'],
     queryFn:  () => authApi.getMe(),
     staleTime: 5 * 60 * 1000,   // 5 minutes
-    retry: 1,                    // one retry — if 403 it will stay 403, no point hammering
+    retry: 1,                   // one retry — if 403 it will stay 403, no point hammering
   })
 
   useEffect(() => {

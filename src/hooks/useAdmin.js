@@ -5,16 +5,20 @@ import {
   getDepartments, createDepartment, updateDepartment, deactivateDepartment,
   getCategories, createCategory, updateCategory, deactivateCategory,
   getProducts, getProduct, createProduct, updateProduct, deactivateProduct,
-  linkCategory, unlinkCategory, getWorkflowDefinitions,
+  addDocumentType, removeDocumentType, getWorkflowDefinitions,
   getRetentionPolicies, createRetentionPolicy, updateRetentionPolicy, deactivateRetentionPolicy,
   getTenantConfig, updateConfigKey, bulkUpdateConfig,
   // Sprint-C
   getHierarchy, getSegments, createSegment, updateSegment,
   getProductLines, createProductLine, updateProductLine,
   getAuditLog,
-  listCustomers, getCustomer, createCustomer, updateCustomer, deactivateCustomer, getRoles, getRole, createRole, updateRole, deleteRole,
+  listCustomers, getCustomer, createCustomer, updateCustomer, deactivateCustomer,
+  addEnrollment, removeEnrollment,
+  getRoles, getRole, createRole, updateRole, deleteRole,
   addPermissionToRole, removePermissionFromRole, applyBundleToRole,
   getPermissions, getBundles,
+  getOcrTemplates, getOcrTemplate, createOcrTemplate, updateOcrTemplate, deleteOcrTemplate,
+  listCases, getCase, createCase, updateCaseStatus, linkCaseDocument, waiveCaseItem,
 } from '../api/adminApi';
 
 // ── Users ──────────────────────────────────────────────────────────────────
@@ -198,19 +202,19 @@ export const useDeactivateProduct = () => {
   });
 };
 
-export const useLinkCategory = () => {
+export const useAddDocumentType = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ productId, payload }) => linkCategory(productId, payload),
+    mutationFn: ({ productId, payload }) => addDocumentType(productId, payload),
     onSuccess: (_, { productId }) =>
       qc.invalidateQueries({ queryKey: ['admin', 'products', productId] }),
   });
 };
 
-export const useUnlinkCategory = () => {
+export const useRemoveDocumentType = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ productId, categoryId }) => unlinkCategory(productId, categoryId),
+    mutationFn: ({ productId, docTypeId }) => removeDocumentType(productId, docTypeId),
     onSuccess: (_, { productId }) =>
       qc.invalidateQueries({ queryKey: ['admin', 'products', productId] }),
   });
@@ -454,6 +458,36 @@ export const useDeactivateCustomer = () => {
     },
   });
 };
+
+export const useAddEnrollment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ customerId, payload }) => addEnrollment(customerId, payload),
+    onSuccess: (_, { customerId }) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'customers'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'customer', customerId] });
+    },
+  });
+};
+
+export const useRemoveEnrollment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ customerId, enrollmentId }) => removeEnrollment(customerId, enrollmentId),
+    onSuccess: (_, { customerId }) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'customers'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'customer', customerId] });
+    },
+  });
+};
+
+export const useCustomerDetail = (id) =>
+  useQuery({
+    queryKey: ['admin', 'customer', id],
+    queryFn: () => getCustomer(id),
+    enabled: !!id,
+  });
+
 export const useRoles = () =>
   useQuery({
     queryKey: ['admin', 'roles'],
@@ -532,3 +566,94 @@ export const useBundles = () =>
     queryFn: getBundles,
     staleTime: 10 * 60_000,
   });
+
+// ── OCR Templates ─────────────────────────────────────────────────────────
+
+export const useOcrTemplates = () =>
+  useQuery({
+    queryKey: ['admin', 'ocr-templates'],
+    queryFn: getOcrTemplates,
+    staleTime: 60_000,
+  });
+
+export const useOcrTemplate = (id) =>
+  useQuery({
+    queryKey: ['admin', 'ocr-templates', id],
+    queryFn: () => getOcrTemplate(id),
+    enabled: !!id,
+  });
+
+export const useCreateOcrTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => createOcrTemplate(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'ocr-templates'] }),
+  });
+};
+
+export const useUpdateOcrTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }) => updateOcrTemplate(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'ocr-templates'] }),
+  });
+};
+
+export const useDeleteOcrTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => deleteOcrTemplate(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'ocr-templates'] }),
+  });
+};
+
+// ── Cases ─────────────────────────────────────────────────────────────────
+
+export const useCases = (params = {}) =>
+  useQuery({
+    queryKey: ['admin', 'cases', params],
+    queryFn: () => listCases(params),
+    staleTime: 30_000,
+  });
+
+export const useCaseDetail = (id) =>
+  useQuery({
+    queryKey: ['admin', 'case', id],
+    queryFn: () => getCase(id),
+    enabled: !!id,
+  });
+
+export const useCreateCase = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => createCase(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'cases'] }),
+  });
+};
+
+export const useUpdateCaseStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }) => updateCaseStatus(id, payload),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'cases'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'case', id] });
+    },
+  });
+};
+
+export const useLinkCaseDocument = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, payload }) => linkCaseDocument(caseId, payload),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }),
+  });
+};
+
+export const useWaiveCaseItem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, itemId, payload }) => waiveCaseItem(caseId, itemId, payload),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }),
+  });
+};
