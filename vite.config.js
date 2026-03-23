@@ -4,14 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 
 import Terminal from "vite-plugin-terminal";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),   // ← Tailwind v4 plugin
-    Terminal({
+    ...(mode === 'development' ? [Terminal({
       console: 'terminal',
       output: ['terminal', 'console'],
-      // Optional: Customize terminal appearance
       theme: {
         background: '#1e1e1e',
         text: '#d4d4d4',
@@ -19,9 +18,8 @@ export default defineConfig({
         fontSize: '14px',
         fontFamily: 'Menlo, Monaco, Consolas, "Courier New", monospace',
       },
-      // Optional: Enable command history
       history: true,
-    }),
+    })] : []),
   ],
   server: {
   port: 3000,
@@ -56,4 +54,4 @@ export default defineConfig({
   //     }
   //   }
   // }
-})
+}))

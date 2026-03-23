@@ -1,16 +1,22 @@
+import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header  from './Header'
 import { useCurrentUser } from '../../hooks/useCurrentUser'
+import useTenantStore from '../../store/tenantStore'
 
 // Routes where the main area should NOT have its own padding/scroll —
 // the page component owns its own layout entirely (e.g. the form designer).
 const FULL_HEIGHT_ROUTES = [
   '/eforms/designer/new',
   '/eforms/designer/',   // prefix match — any /eforms/designer/:id
+  // Note: /workflow/designer is NOT listed here — the BPMN editor renders as a
+  // fixed overlay (TemplateEditor), so the template list page needs normal scrolling.
 ]
 
 function isFullHeightRoute(pathname) {
+  // /eforms/designer/list is a scrollable list page, not a full-height canvas
+  if (pathname === '/eforms/designer/list') return false;
   return FULL_HEIGHT_ROUTES.some(r => pathname.startsWith(r))
 }
 
@@ -18,6 +24,12 @@ export default function AppLayout() {
   const location = useLocation()
   const { isLoading, isError } = useCurrentUser()
   const fullHeight = isFullHeightRoute(location.pathname)
+  const { loaded: tenantLoaded, loadConfig } = useTenantStore()
+
+  // Load tenant config once on app startup
+  useEffect(() => {
+    if (!tenantLoaded) loadConfig()
+  }, [tenantLoaded, loadConfig])
 
   // ── Loading state ─────────────────────────────────────────────
   if (isLoading) {
@@ -82,7 +94,7 @@ export default function AppLayout() {
 
   // ── Authenticated layout ──────────────────────────────────────
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: '#f4f6f9' }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--color-page-bg, #f4f6f9)' }}>
       <Sidebar />
       <div className="flex flex-col flex-1 overflow-hidden">
         <Header pathname={location.pathname} />

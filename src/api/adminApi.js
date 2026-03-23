@@ -2,6 +2,10 @@ import api from './apiClient';
 
 const unwrap = (r) => r.data?.data ?? r.data;
 
+// ── Dashboard ─────────────────────────────────────────────────────────────
+export const getDashboardCounts = () =>
+  api.get('/api/admin/dashboard/counts').then(unwrap);
+
 // ── Users ──────────────────────────────────────────────────────────────────
 export const searchUsers = (params) =>
   api.get('/api/admin/users', { params }).then(unwrap);
@@ -107,6 +111,9 @@ export const updateConfigKey = (key, payload) =>
 export const bulkUpdateConfig = (configs) =>
   api.put('/api/admin/config', { configs }).then(unwrap);
 
+export const resetConfigToDefaults = () =>
+  api.post('/api/admin/config/reset').then(unwrap);
+
 // ── Hierarchy ──────────────────────────────────────────────────────────────
 export const getHierarchy = () =>
   api.get('/api/admin/hierarchy').then(unwrap);
@@ -155,6 +162,12 @@ export const deactivateCustomer = (id) =>
 
 export const addEnrollment = (customerId, payload) =>
   api.post(`/api/admin/customers/${customerId}/enrollments`, payload).then(unwrap);
+
+export const getCustomerPortfolio = (customerId) =>
+  api.get(`/api/admin/customers/${customerId}/portfolio`).then(unwrap);
+
+export const listExternalUploads = (caseId) =>
+  api.get(`/api/admin/cases/${caseId}/external-uploads`).then(unwrap);
 
 export const removeEnrollment = (customerId, enrollmentId) =>
   api.delete(`/api/admin/customers/${customerId}/enrollments/${enrollmentId}`).then(unwrap);
@@ -247,6 +260,81 @@ export const cancelCase = (caseId) =>
 
 export const deleteCase = (caseId) =>
   api.delete(`/api/admin/cases/${caseId}`).then(unwrap);
+
+export const startChecklistWorkflow = (caseId, itemId) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/start-workflow`).then(unwrap);
+
+export const getCaseTimeline = (caseId) =>
+  api.get(`/api/admin/cases/${caseId}/timeline`).then(unwrap);
+
+// ── Override System ───────────────────────────────────────────────────────
+
+export const requestOverride = (caseId, itemId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/override-request`, payload).then(unwrap);
+
+export const listOverrideRequests = (params = {}) =>
+  api.get('/api/admin/override-requests', { params }).then(unwrap);
+
+export const reviewOverrideRequest = (requestId, payload) =>
+  api.post(`/api/admin/override-requests/${requestId}/review`, payload).then(unwrap);
+
+export const adminBypassItem = (caseId, itemId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/admin-bypass`, payload).then(unwrap);
+
+export const assignCase = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/assign`, payload).then(unwrap);
+
+export const claimCase = (caseId) =>
+  api.post(`/api/admin/cases/${caseId}/claim`).then(unwrap);
+
+export const verifyItems = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/verify`, payload).then(unwrap);
+
+export const requestAdditionalDocs = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/request-docs`, payload).then(unwrap);
+
+// ── External Participants ─────────────────────────────────────────────────
+
+export const listParticipants = (caseId) =>
+  api.get(`/api/admin/cases/${caseId}/participants`).then(unwrap);
+
+export const addParticipant = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/participants`, payload).then(unwrap);
+
+export const removeParticipant = (caseId, participantId) =>
+  api.delete(`/api/admin/cases/${caseId}/participants/${participantId}`).then(unwrap);
+
+export const shareDocumentsWithParticipant = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/participants/share`, payload).then(unwrap);
+
+// ── External portal APIs (no Okta JWT — use raw axios) ──────────────────────
+// These endpoints are called by external participants who have no Okta session.
+// Using the authenticated apiClient would fail because the Okta interceptor
+// tries to attach a Bearer token that doesn't exist.
+
+import axios from 'axios';
+const externalApi = axios.create({ baseURL: '' });
+const unwrapExternal = (r) => r.data?.data ?? r.data;
+
+export const requestExternalOtp = (inviteToken) =>
+  externalApi.post(`/api/admin/cases/external/${inviteToken}/request-otp`).then(unwrapExternal);
+
+export const verifyExternalOtp = (inviteToken, payload) =>
+  externalApi.post(`/api/admin/cases/external/${inviteToken}/verify-otp`, payload).then(unwrapExternal);
+
+export const externalUpload = (sessionToken, file, description) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (description) formData.append('description', description);
+  return externalApi.post('/api/admin/cases/external/session/upload', formData, {
+    headers: { 'X-External-Session': sessionToken },
+  }).then(unwrapExternal);
+};
+
+export const externalComment = (sessionToken, comment) =>
+  externalApi.post('/api/admin/cases/external/session/comment', { comment }, {
+    headers: { 'X-External-Session': sessionToken },
+  }).then(unwrapExternal);
 
 // ── Notifications ─────────────────────────────────────────────────────────
 

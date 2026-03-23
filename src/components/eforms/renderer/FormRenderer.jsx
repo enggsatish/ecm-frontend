@@ -37,7 +37,20 @@ export default function FormRenderer({
   onSubmitSuccess = null,   // standalone: called after API success
   onBack          = null,
 }) {
-  const [formData, setFormData] = useState(initialData || {});
+  // Build initial form data with defaults so rules evaluate correctly on load.
+  // Checkbox defaults to false, other fields to empty string, so rules like
+  // "when checkbox equals unchecked → hide field" fire immediately.
+  const [formData, setFormData] = useState(() => {
+    const defaults = {};
+    for (const section of (schema?.sections || [])) {
+      for (const field of (section.fields || [])) {
+        if (!field.key) continue;
+        if (field.type === 'CHECKBOX') defaults[field.key] = false;
+        else if (field.type === 'CHECKBOX_GROUP') defaults[field.key] = [];
+      }
+    }
+    return { ...defaults, ...(initialData || {}) };
+  });
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
 
@@ -158,6 +171,7 @@ export default function FormRenderer({
     );
   }
 
+  const isInline = (schema.labelPosition || 'inline') === 'inline';
   const primaryLabel = onReview ? 'Review & Submit' : (schema.submitButtonLabel || 'Submit');
   const primaryIcon  = onReview ? <ArrowRight className="w-4 h-4" /> : <Send className="w-4 h-4" />;
 
@@ -193,32 +207,51 @@ export default function FormRenderer({
               </div>
             )}
             <div className="px-6 py-5">
-              <div className="grid grid-cols-12 gap-4">
+              <div className="grid grid-cols-12 gap-x-4 gap-y-3">
                 {visibleFields.map((field) => {
                   const isReq = field.required || dynRequired.has(field.key);
                   const err = fieldErrors[field.key];
                   const isDisplayOnly = ['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER'].includes(field.type);
+                  const isCheckbox = field.type === 'CHECKBOX';
+                  const skipLabel = isDisplayOnly || isCheckbox;
 
                   return (
                     <div key={field.id} className={colSpanClass(field.colSpan || 6)}>
-                      {!isDisplayOnly && (
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                          {field.label}
-                          {isReq && <span className="text-red-500 ml-0.5">*</span>}
-                        </label>
+                      {isInline && !skipLabel ? (
+                        /* Inline: label auto-width, input fills the rest */
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">
+                            {field.label}
+                            {isReq && <span className="text-red-500 ml-0.5">*</span>}
+                          </label>
+                          <div className="flex-1 min-w-0">
+                            <FieldRenderer field={field} value={formData[field.key]}
+                              onChange={(val) => !readOnly && handleChange(field.key, val)}
+                              isRequired={isReq} isDisabled={readOnly} error={err} />
+                            {field.helpText && !err && (
+                              <p className="mt-1 text-xs text-gray-400">{field.helpText}</p>
+                            )}
+                            {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
+                          </div>
+                        </div>
+                      ) : (
+                        /* Stacked: label above input, or display-only/checkbox */
+                        <>
+                          {!skipLabel && (
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                              {field.label}
+                              {isReq && <span className="text-red-500 ml-0.5">*</span>}
+                            </label>
+                          )}
+                          <FieldRenderer field={field} value={formData[field.key]}
+                            onChange={(val) => !readOnly && handleChange(field.key, val)}
+                            isRequired={isReq} isDisabled={readOnly} error={err} />
+                          {field.helpText && !err && (
+                            <p className="mt-1 text-xs text-gray-400">{field.helpText}</p>
+                          )}
+                          {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
+                        </>
                       )}
-                      <FieldRenderer
-                        field={field}
-                        value={formData[field.key]}
-                        onChange={(val) => !readOnly && handleChange(field.key, val)}
-                        isRequired={isReq}
-                        isDisabled={readOnly}
-                        error={err}
-                      />
-                      {field.helpText && !err && (
-                        <p className="mt-1 text-xs text-gray-400">{field.helpText}</p>
-                      )}
-                      {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
                     </div>
                   );
                 })}

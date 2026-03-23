@@ -7,10 +7,14 @@ import {
   Users, FolderTree, Package, Archive, GitMerge,
   Layers, GitBranch, ShieldCheck, Link2,
   Bell, Shield, ScanLine, UserCircle, Briefcase,
-  Cog, UserCog, Network,
+  Cog, UserCog, Network, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
+import { useQuery }     from '@tanstack/react-query'
 import useUserStore     from '../../store/userStore'
+import useUiStore       from '../../store/uiStore'
+import useTenantStore   from '../../store/tenantStore'
 import { ROLES, ROLE_GROUPS } from '../../utils/roles'
+import { getDashboardCounts } from '../../api/adminApi'
 
 // ─── eForms sub-nav ───────────────────────────────────────────────────────────
 const EFORMS_CHILDREN = [
@@ -24,45 +28,46 @@ const ADMIN_GROUPS = [
   {
     key: 'people',    label: 'People & Access', icon: UserCog,
     children: [
-      { path: '/admin/users',        label: 'Users',              icon: Users,     roles: [ROLES.ADMIN] },
-      { path: '/admin/roles',        label: 'Roles & Permissions',icon: Shield,    roles: [ROLES.ADMIN] },
-      { path: '/admin/departments',  label: 'Departments',        icon: Building2, roles: [ROLES.ADMIN] },
+      { path: '/admin/users',        label: 'Users',              icon: Users,     roles: ROLE_GROUPS.SUPER_ONLY },
+      { path: '/admin/roles',        label: 'Roles & Permissions',icon: Shield,    roles: ROLE_GROUPS.SUPER_ONLY },
+      { path: '/admin/departments',  label: 'Departments',        icon: Building2, roles: ROLE_GROUPS.SUPER_ONLY },
     ],
   },
   {
     key: 'customers', label: 'Customers', icon: UserCircle,
     children: [
-      { path: '/admin/customers',    label: 'Customer Management', icon: UserCircle, roles: [ROLES.ADMIN] },
+      { path: '/admin/customers',    label: 'Customer Management', icon: UserCircle, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
   {
     key: 'catalogue', label: 'Product Catalogue', icon: Package,
     children: [
-      { path: '/admin/segments',       label: 'Segments',      icon: Layers,    roles: [ROLES.ADMIN] },
-      { path: '/admin/product-lines',  label: 'Product Lines', icon: GitBranch, roles: [ROLES.ADMIN] },
-      { path: '/admin/products',       label: 'Products',      icon: Package,   roles: [ROLES.ADMIN] },
-      { path: '/admin/categories',     label: 'Categories',    icon: FolderTree,roles: [ROLES.ADMIN] },
+      { path: '/admin/segments',       label: 'Segments',      icon: Layers,    roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/product-lines',  label: 'Product Lines', icon: GitBranch, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/products',       label: 'Products',      icon: Package,   roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/categories',     label: 'Categories',    icon: FolderTree,roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
   {
     key: 'processing', label: 'Processing', icon: Cog,
     children: [
-      { path: '/admin/ocr-templates',  label: 'OCR Templates',      icon: ScanLine, roles: [ROLES.ADMIN] },
-      { path: '/admin/retention',       label: 'Retention Policies', icon: Archive,  roles: [ROLES.ADMIN] },
-      { path: '/admin/notifications',   label: 'Notifications',      icon: Bell,     roles: [ROLES.ADMIN] },
+      { path: '/admin/ocr-templates',  label: 'OCR Templates',      icon: ScanLine, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/retention',       label: 'Retention Policies', icon: Archive,  roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/notifications',   label: 'Notifications',      icon: Bell,     roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/email-templates', label: 'Email Templates',    icon: Bell,     roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
   {
     key: 'integrations', label: 'Integrations', icon: Network,
     children: [
-      { path: '/admin/integrations/docusign', label: 'DocuSign', icon: Link2, roles: [ROLES.ADMIN] },
+      { path: '/admin/integrations/docusign', label: 'DocuSign', icon: Link2, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
   {
     key: 'system', label: 'System', icon: Settings,
     children: [
-      { path: '/admin/settings',  label: 'Settings',  icon: Settings,    roles: [ROLES.ADMIN] },
-      { path: '/admin/audit',     label: 'Audit Log', icon: ShieldCheck, roles: [ROLES.ADMIN] },
+      { path: '/admin/settings',  label: 'Settings',  icon: Settings,    roles: ROLE_GROUPS.SUPER_ONLY },
+      { path: '/admin/audit',     label: 'Audit Log', icon: ShieldCheck, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
 ]
@@ -77,8 +82,21 @@ const NAV_ITEMS = [
     roles: ROLE_GROUPS.ALL,
   },
   {
+    path: '/backoffice/queue', icon: Inbox, label: 'Review Queue',
+    roles: ROLE_GROUPS.OPERATIONS,
+  },
+  {
     path: '/documents', icon: FolderOpen, label: 'Documents',
     roles: ROLE_GROUPS.ALL,
+  },
+  {
+    path: '/cases', icon: Briefcase, label: 'Cases',
+    roles: ROLE_GROUPS.OPERATIONS,
+  },
+  {
+    path: '/workflow', icon: CheckSquare, label: 'SLA Dashboard',
+    roles: ROLE_GROUPS.OPERATIONS,
+    exact: true,
   },
   {
     path: '/eforms', icon: ClipboardList, label: 'eForms',
@@ -87,26 +105,13 @@ const NAV_ITEMS = [
     children: EFORMS_CHILDREN,
   },
   {
-    path: '/cases', icon: Briefcase, label: 'Cases',
-    roles: ROLE_GROUPS.OPERATIONS,
-  },
-  {
-    path: '/backoffice/queue', icon: Inbox, label: 'Review Queue',
-    roles: ROLE_GROUPS.OPERATIONS,
-  },
-  {
-    path: '/workflow', icon: CheckSquare, label: 'My Tasks',
-    roles: ROLE_GROUPS.OPERATIONS,
-    exact: true,
-  },
-  {
     path: '/workflow/designer', icon: GitMerge, label: 'Workflow Designer',
     roles: ROLE_GROUPS.DESIGN,
   },
   {
     path: '/admin', icon: Settings, label: 'Administration',
     isGroup: true, groupKey: 'admin',
-    roles: [ROLES.ADMIN],
+    roles: ROLE_GROUPS.ADMIN_OR_SUPER,
     children: ADMIN_CHILDREN,
     subGroups: ADMIN_GROUPS,
   },
@@ -117,9 +122,46 @@ function hasRole(userRoles = [], required) {
   return required.some(r => userRoles.includes(r))
 }
 
+// Badge pill component
+function SidebarBadge({ count, collapsed }) {
+  if (!count || count <= 0) return null
+  const label = count > 99 ? '99+' : count
+  if (collapsed) {
+    return (
+      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center
+                        rounded-full bg-red-500 text-white text-[9px] font-bold px-1 shadow-sm">
+        {label}
+      </span>
+    )
+  }
+  return (
+    <span className="ml-auto min-w-[20px] h-5 flex items-center justify-center
+                      rounded-full bg-red-500/90 text-white text-[10px] font-bold px-1.5">
+      {label}
+    </span>
+  )
+}
+
 export default function Sidebar() {
   const { user }     = useUserStore()
   const location     = useLocation()
+  const { sidebarCollapsed, toggleSidebar } = useUiStore()
+  const tenant       = useTenantStore()
+
+  // Poll queue counts every 30s for sidebar badges
+  const { data: counts } = useQuery({
+    queryKey: ['dashboard-counts'],
+    queryFn: getDashboardCounts,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    throwOnError: false,
+  })
+
+  // Map paths to badge counts
+  const badgeCounts = {
+    '/backoffice/queue': (counts?.reviewQueueUnclaimed || 0) + (counts?.reviewQueueMine || 0),
+    '/cases':            (counts?.casesAssignedToGroup || 0) + (counts?.casesAssignedToMe || 0),
+  }
 
   const isInEForms = location.pathname.startsWith('/eforms')
   const isInAdmin  = location.pathname.startsWith('/admin')
@@ -137,35 +179,50 @@ export default function Sidebar() {
     admin:  { isOpen: adminOpen,  onToggle: () => setAdminOpen(v => !v)  },
   }
 
+  const collapsed = sidebarCollapsed
+
   return (
+    <div className="relative flex-shrink-0" style={{ zIndex: 20 }}>
     <aside
-      className="flex flex-col w-64 flex-shrink-0"
-      style={{ background: 'linear-gradient(180deg, #002347 0%, #003057 100%)' }}
+      className={`flex flex-col h-full transition-all duration-200 ease-in-out
+                  ${collapsed ? 'w-16' : 'w-64'}`}
+      style={{ background: `linear-gradient(180deg, ${tenant.sidebarBg} 0%, ${tenant.sidebarBg}e6 100%)` }}
     >
-      {/* ── Servus Logo ──────────────────────────────────────── */}
-      <div className="px-5 pt-6 pb-5 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-accent-500
+      {/* ── Logo ──────────────────────────────────────── */}
+      <div className={`border-b border-white/10 ${collapsed ? 'px-2 pt-4 pb-3' : 'px-5 pt-6 pb-5'}`}>
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
+          {tenant.logoUrl ? (
+            <img src={tenant.logoUrl} alt={tenant.name}
+                 className="w-10 h-10 rounded-full object-cover flex-shrink-0 bg-white/10"
+                 onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+          ) : null}
+          <div className={`w-10 h-10 rounded-full bg-accent-500
                           flex items-center justify-center flex-shrink-0
-                          shadow-lg shadow-accent-900/40">
-            <span className="text-white font-bold text-base leading-none select-none">S</span>
+                          shadow-lg shadow-accent-900/40 ${tenant.logoUrl ? 'hidden' : ''}`}>
+            <span className="text-white font-bold text-base leading-none select-none">
+              {(tenant.name || 'E').charAt(0).toUpperCase()}
+            </span>
           </div>
-          <div>
-            <p className="font-bold text-white text-sm leading-tight tracking-wide">Enterprise</p>
-            <p className="text-[10px] text-white/50 font-medium tracking-widest uppercase mt-0.5">
-              Document Management
-            </p>
-          </div>
+          {!collapsed && (
+            <div>
+              <p className="font-bold text-white text-sm leading-tight tracking-wide">{tenant.name}</p>
+              <p className="text-[10px] text-white/50 font-medium tracking-widest uppercase mt-0.5">
+                Document Management
+              </p>
+            </div>
+          )}
         </div>
-        <p className="mt-3 text-[10px] text-white/30 italic font-medium leading-relaxed">
-          Feel good about your documents.
-        </p>
+        {!collapsed && (
+          <p className="mt-3 text-[10px] text-white/30 italic font-medium leading-relaxed">
+            Feel good about your documents.
+          </p>
+        )}
       </div>
 
       {/* ── Navigation ───────────────────────────────────────── */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-3'}`}>
         {visibleItems.map((item) => {
-          if (item.isGroup) {
+          if (item.isGroup && !collapsed) {
             const { isOpen, onToggle } = groupState[item.groupKey] ?? {}
             return (
               <NavGroup
@@ -180,29 +237,64 @@ export default function Sidebar() {
           }
 
           const Icon = item.icon
+          const isActive = item.exact
+            ? location.pathname === item.path
+            : location.pathname.startsWith(item.path)
+
+          if (collapsed) {
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.exact}
+                title={item.label}
+                className={({ isActive: linkActive }) =>
+                  `group flex items-center justify-center p-2.5 rounded-lg
+                   transition-all duration-150 relative
+                   ${linkActive
+                     ? 'bg-accent-500 text-white shadow-md shadow-accent-900/30'
+                     : 'text-white/60 hover:bg-white/8 hover:text-white'
+                   }`
+                }
+              >
+                {({ isActive: linkActive }) => (
+                  <>
+                    {linkActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2
+                                       w-0.5 h-5 bg-white rounded-r-full" />
+                    )}
+                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    <SidebarBadge count={badgeCounts[item.path]} collapsed />
+                  </>
+                )}
+              </NavLink>
+            )
+          }
+
           return (
             <NavLink
               key={item.path}
               to={item.path}
               end={item.exact}
-              className={({ isActive }) =>
+              className={({ isActive: linkActive }) =>
                 `group flex items-center gap-3 px-3 py-2.5 rounded-lg
                  text-sm font-medium transition-all duration-150 relative
-                 ${isActive
+                 ${linkActive
                    ? 'bg-accent-500 text-white shadow-md shadow-accent-900/30'
                    : 'text-white/60 hover:bg-white/8 hover:text-white'
                  }`
               }
             >
-              {({ isActive }) => (
+              {({ isActive: linkActive }) => (
                 <>
-                  {isActive && (
+                  {linkActive && (
                     <span className="absolute left-0 top-1/2 -translate-y-1/2
                                      w-0.5 h-5 bg-white rounded-r-full" />
                   )}
                   <Icon className={`w-4.5 h-4.5 flex-shrink-0 transition-transform
-                                    ${isActive ? 'scale-110' : 'group-hover:scale-105'}`} />
+                                    ${linkActive ? 'scale-110' : 'group-hover:scale-105'}`} />
                   {item.label}
+                  <SidebarBadge count={badgeCounts[item.path]} />
                 </>
               )}
             </NavLink>
@@ -210,25 +302,44 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* ── Platform info card ─────────────────────────────── */}
-      <div className="mx-3 mb-3 rounded-xl overflow-hidden"
-           style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%)' }}>
-        <div className="px-3.5 py-3 border border-white/8 rounded-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <Shield className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />
-            <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">
-              ECM Platform
-            </span>
+      {/* ── Platform info (expanded only) ──────────────── */}
+      {!collapsed && (
+        <div className="mx-3 mb-3 rounded-xl overflow-hidden"
+             style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%)' }}>
+          <div className="px-3.5 py-3 border border-white/8 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Shield className="w-3.5 h-3.5 text-accent-400 flex-shrink-0" />
+              <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">
+                ECM Platform
+              </span>
+            </div>
+            <p className="text-white/70 font-semibold text-xs leading-snug">
+              Secure Document Management
+            </p>
+            <p className="text-white/30 text-[10px] leading-relaxed mt-1">
+              Encrypted at rest. Role-based access control.
+            </p>
           </div>
-          <p className="text-white/70 font-semibold text-xs leading-snug">
-            Secure Document Management
-          </p>
-          <p className="text-white/30 text-[10px] leading-relaxed mt-1">
-            Encrypted at rest. Role-based access control.
-          </p>
         </div>
-      </div>
+      )}
     </aside>
+
+    {/* ── Edge toggle — floating on the sidebar border ── */}
+    <button
+      onClick={toggleSidebar}
+      className="absolute top-1/2 -translate-y-1/2 -right-3 z-10
+                 w-6 h-6 rounded-full bg-white border border-gray-200
+                 shadow-md flex items-center justify-center
+                 text-gray-400 hover:text-gray-700 hover:shadow-lg
+                 transition-all duration-150 cursor-pointer"
+      title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+    >
+      {collapsed
+        ? <PanelLeftOpen className="w-3.5 h-3.5" />
+        : <PanelLeftClose className="w-3.5 h-3.5" />
+      }
+    </button>
+    </div>
   )
 }
 

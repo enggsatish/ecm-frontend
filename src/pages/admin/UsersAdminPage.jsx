@@ -13,10 +13,14 @@ import {
   useDepartments,
   useInviteUser,
 } from '../../hooks/useAdmin';
+import useUserStore from '../../store/userStore';
 
-const ALL_ROLES = ['ECM_ADMIN', 'ECM_DESIGNER', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_READONLY'];
+const SUPER_ADMIN_ROLE = 'ECM_SUPER_ADMIN';
+const ALL_ROLES_FULL = [SUPER_ADMIN_ROLE, 'ECM_ADMIN', 'ECM_DESIGNER', 'ECM_BACKOFFICE', 'ECM_REVIEWER', 'ECM_READONLY'];
+const ALL_ROLES_NO_SUPER = ALL_ROLES_FULL.filter(r => r !== SUPER_ADMIN_ROLE);
 
 const ROLE_COLORS = {
+  ECM_SUPER_ADMIN:'bg-rose-100 text-rose-800',
   ECM_ADMIN:      'bg-red-100 text-red-700',
   ECM_DESIGNER:   'bg-purple-100 text-purple-700',
   ECM_BACKOFFICE: 'bg-blue-100 text-blue-700',
@@ -47,7 +51,9 @@ function RoleBadge({ role, onRemove, removing }) {
 function AddRoleDropdown({ userId, existingRoles }) {
   const [open, setOpen] = useState(false);
   const addRole = useAddRole();
-  const available = ALL_ROLES.filter(r => !existingRoles.includes(r));
+  const isSuperAdmin = useUserStore(s => s.isSuperAdmin());
+  const visibleRoles = isSuperAdmin ? ALL_ROLES_FULL : ALL_ROLES_NO_SUPER;
+  const available = visibleRoles.filter(r => !existingRoles.includes(r));
 
   if (!available.length) return null;
 
@@ -215,6 +221,8 @@ function InviteUserModal({ departments, onClose }) {
   const [initRole,    setInitRole]    = useState('ECM_READONLY');
 
   const inviteUser = useInviteUser();
+  const isSuperAdmin = useUserStore(s => s.isSuperAdmin());
+  const inviteRoles = isSuperAdmin ? ALL_ROLES_FULL : ALL_ROLES_NO_SUPER;
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -321,7 +329,7 @@ function InviteUserModal({ departments, onClose }) {
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm
                          focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
-              {ALL_ROLES.map(r => (
+              {inviteRoles.map(r => (
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
@@ -377,6 +385,8 @@ export default function UsersAdminPage() {
   const [page,         setPage]         = useState(0);
   const [showInvite,   setShowInvite]   = useState(false);
 
+  const isSuperAdmin = useUserStore(s => s.isSuperAdmin());
+  const filterRoles = isSuperAdmin ? ALL_ROLES_FULL : ALL_ROLES_NO_SUPER;
   const { data: depts } = useDepartments(true);
   const { data, isLoading, isError } = useUsers({
     search:       search       || undefined,
@@ -417,7 +427,7 @@ export default function UsersAdminPage() {
                        focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
             <option value="">All Roles</option>
-            {ALL_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+            {filterRoles.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
 
           {/* Status filter */}

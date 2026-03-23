@@ -43,6 +43,14 @@ export default function RuleBuilder() {
   const rules = schema.globalRules || [];
   const fieldKeys = getAllFieldKeys();
 
+  // Build a map of field key → full field object (type, options, etc.) for smart value inputs
+  const allFields = {};
+  for (const section of (schema.sections || [])) {
+    for (const field of (section.fields || [])) {
+      if (field.key) allFields[field.key] = field;
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
       <div className="max-w-3xl mx-auto">
@@ -75,6 +83,7 @@ export default function RuleBuilder() {
                 rule={rule}
                 ruleNumber={rIdx + 1}
                 fieldKeys={fieldKeys}
+                allFields={allFields}
                 onUpdate={(partial) => updateGlobalRule(rule.id, partial)}
                 onRemove={() => removeGlobalRule(rule.id)}
               />
@@ -87,7 +96,7 @@ export default function RuleBuilder() {
 }
 
 // ─── Rule Card ────────────────────────────────────────────────────────────────
-function RuleCard({ rule, ruleNumber, fieldKeys, onUpdate, onRemove }) {
+function RuleCard({ rule, ruleNumber, fieldKeys, allFields, onUpdate, onRemove }) {
   const updateCondition = (partial) =>
     onUpdate({ condition: { ...rule.condition, ...partial } });
 
@@ -159,39 +168,14 @@ function RuleCard({ rule, ruleNumber, fieldKeys, onUpdate, onRemove }) {
 
           <div className="space-y-1.5 ml-2">
             {(rule.condition?.clauses || []).map((clause, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <select
-                  value={clause.field}
-                  onChange={(e) => updateClause(idx, { field: e.target.value })}
-                  className={smallSelectCls}
-                >
-                  <option value="">Select field...</option>
-                  {fieldKeys.map((f) => (
-                    <option key={f.key} value={f.key}>{f.label || f.key}</option>
-                  ))}
-                </select>
-                <select
-                  value={clause.operator}
-                  onChange={(e) => updateClause(idx, { operator: e.target.value })}
-                  className={smallSelectCls}
-                >
-                  {OPERATORS.map((op) => (
-                    <option key={op.value} value={op.value}>{op.label}</option>
-                  ))}
-                </select>
-                {NEEDS_VALUE_OPS.has(clause.operator) && (
-                  <input
-                    type="text"
-                    value={clause.value || ''}
-                    onChange={(e) => updateClause(idx, { value: e.target.value })}
-                    placeholder="value"
-                    className="text-xs border border-gray-200 rounded px-2 py-1 w-28 focus:outline-none focus:border-indigo-400"
-                  />
-                )}
-                <button onClick={() => removeClause(idx)} className="text-gray-300 hover:text-red-400">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <ClauseRow
+                key={idx}
+                clause={clause}
+                fieldKeys={fieldKeys}
+                allFields={allFields}
+                onChange={(partial) => updateClause(idx, partial)}
+                onRemove={() => removeClause(idx)}
+              />
             ))}
             <button
               onClick={addClause}
@@ -267,6 +251,75 @@ function ActionRow({ action, fieldKeys, onChange, onRemove }) {
         />
       )}
       <button onClick={onRemove} className="text-gray-300 hover:text-red-400">
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// ─── Clause Row — smart value input based on field type ──────────────────────
+function ClauseRow({ clause, fieldKeys, allFields, onChange, onRemove }) {
+  const selectedField = clause.field ? allFields[clause.field] : null;
+  const fieldType = selectedField?.type;
+  const isCheckbox = fieldType === 'CHECKBOX';
+  const hasOptions = ['DROPDOWN', 'OPTION_BUTTON', 'CHECKBOX_GROUP'].includes(fieldType);
+  const needsValue = NEEDS_VALUE_OPS.has(clause.operator);
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <select
+        value={clause.field}
+        onChange={(e) => onChange({ field: e.target.value, value: '' })}
+        className={smallSelectCls}
+      >
+        <option value="">Select field...</option>
+        {fieldKeys.map((f) => (
+          <option key={f.key} value={f.key}>{f.label || f.key}</option>
+        ))}
+      </select>
+      <select
+        value={clause.operator}
+        onChange={(e) => onChange({ operator: e.target.value })}
+        className={smallSelectCls}
+      >
+        {OPERATORS.map((op) => (
+          <option key={op.value} value={op.value}>{op.label}</option>
+        ))}
+      </select>
+      {needsValue && isCheckbox ? (
+        // Checkbox: show checked/unchecked dropdown
+        <select
+          value={clause.value || ''}
+          onChange={(e) => onChange({ value: e.target.value })}
+          className={smallSelectCls}
+        >
+          <option value="">Select...</option>
+          <option value="true">Checked</option>
+          <option value="false">Unchecked</option>
+        </select>
+      ) : needsValue && hasOptions ? (
+        // Dropdown/OptionButton: show options as dropdown
+        <select
+          value={clause.value || ''}
+          onChange={(e) => onChange({ value: e.target.value })}
+          className={smallSelectCls}
+        >
+          <option value="">Select value...</option>
+          {(selectedField?.options || []).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      ) : needsValue ? (
+        // Default: text input
+        <input
+          type="text"
+          value={clause.value || ''}
+          onChange={(e) => onChange({ value: e.target.value })}
+          placeholder="value"
+          className="text-xs border border-gray-200 rounded px-2 py-1 w-28 focus:outline-none focus:border-indigo-400"
+        />
+      ) : null}
+      <button onClick={onRemove} className="text-gray-400 hover:text-red-500 cursor-pointer">
         <Trash2 className="w-3.5 h-3.5" />
       </button>
     </div>

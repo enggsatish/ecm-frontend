@@ -23,12 +23,45 @@ export const oktaAuth = new OktaAuth({
   responseType: 'code',
   tokenManager: {
     storage: 'sessionStorage',
-    autoRenew: true,
+    autoRenew: true,           // silently renew tokens before expiry
+    expireEarlySeconds: 300,   // start renewal 5 minutes before expiry
     syncStorage: true,
   },
   cookies: {
-    secure: false,   // false for localhost http
+    secure: false,   // false for localhost http; set true in production
   },
 })
 
+// ── Session expiry event bus ──────────────────────────────────────────────
+// Components can listen for 'ecm:session-expired' to show a modal instead
+// of the hard redirect to Okta login.
+//
+// Fired when:
+//   1. autoRenew fails (Okta session truly dead)
+//   2. 401 response from API (token invalid/expired and renewal failed)
+
+export const SESSION_EXPIRED_EVENT = 'ecm:session-expired'
+
+function fireSessionExpired() {
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
+}
+
+// Listen for token renewal failures from Okta SDK
+oktaAuth.tokenManager.on('error', (err) => {
+  // 'login_required' means the Okta session is dead — can't silently renew
+  if (err?.errorCode === 'login_required' || err?.message?.includes('login_required')) {
+    console.warn('[OktaAuth] Silent renewal failed — Okta session expired')
+    fireSessionExpired()
+  }
+})
+
+// Also fire on token removal (expired and couldn't renew)
+oktaAuth.tokenManager.on('expired', (key) => {
+  if (key === 'accessToken') {
+    console.warn('[OktaAuth] Access token expired — attempting renewal')
+    // autoRenew will try to renew. If it fails, the 'error' handler above fires.
+  }
+})
+
+export { fireSessionExpired }
 export default oktaAuth

@@ -33,6 +33,8 @@ const AuditLogPage           = lazy(() => import('./pages/admin/AuditLogPage'))
 const RolesPage              = lazy(() => import('./pages/admin/RolesPage'))          // Sprint G
 const DocuSignSettingsPage   = lazy(() => import('./pages/admin/DocuSignSettingsPage'))
 const NotificationPreferencesPage = lazy(() => import('./pages/admin/NotificationPreferencesPage'))
+const EmailTemplatesPage = lazy(() => import('./pages/admin/EmailTemplatesPage'))
+const CustomerPortfolioPage = lazy(() => import('./pages/admin/CustomerPortfolioPage'))
 
 // ── eForms pages ─────────────────────────────────────────────────────────────
 const EFormsPage           = lazy(() => import('./pages/eforms/EFormsPage'))
@@ -44,9 +46,14 @@ const FormDesignerPage     = lazy(() => import('./pages/eforms/FormDesignerPage'
 
 // ── Cases ─────────────────────────────────────────────────────────────────────
 const CasesPage            = lazy(() => import('./pages/cases/CasesPage'))
+const CaseDetailPage       = lazy(() => import('./pages/cases/CaseDetailPage'))
+
+// ── External (no auth) ──────────────────────────────────────────────────────
+const ExternalCasePage     = lazy(() => import('./pages/external/ExternalCasePage'))
 
 // ── Other pages ───────────────────────────────────────────────────────────────
 const BackofficeQueuePage  = lazy(() => import('./pages/backoffice/BackofficeQueuePage'))
+const SessionExpiredModal  = lazy(() => import('./components/common/SessionExpiredModal'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -96,6 +103,9 @@ function AppRoutes() {
           {/* ── Public: Okta callback ──────────────────────────────────── */}
           <Route path="/login/callback" element={<LoginCallback />} />
 
+          {/* ── External: no auth required (OTP-based) ────────────────── */}
+          <Route path="/external/case/:inviteToken" element={<ExternalCasePage />} />
+
           {/* ── Protected shell ───────────────────────────────────────── */}
           <Route
             element={
@@ -114,9 +124,20 @@ function AppRoutes() {
               </RoleGuard>
             } />
 
+            <Route path="/customers/:id/portfolio" element={
+              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
+                <CustomerPortfolioPage />
+              </RoleGuard>
+            } />
+
             <Route path="/cases" element={
               <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
                 <CasesPage />
+              </RoleGuard>
+            } />
+            <Route path="/cases/:id" element={
+              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
+                <CaseDetailPage />
               </RoleGuard>
             } />
 
@@ -131,27 +152,28 @@ function AppRoutes() {
               </RoleGuard>
             } />
 
-            {/* ── Admin (ECM_ADMIN only) ────────────────────────────── */}
+            {/* ── Admin (ECM_ADMIN or ECM_SUPER_ADMIN) ────────────────── */}
             <Route path="/admin" element={
-              <RoleGuard roles={[ROLES.ADMIN]}>
+              <RoleGuard roles={ROLE_GROUPS.ADMIN_OR_SUPER}>
                 <AdminPage />
               </RoleGuard>
             }>
-              <Route index element={<Navigate to="users" replace />} />
-              <Route path="users"         element={<UsersAdminPage />} />
-              <Route path="departments"   element={<DepartmentsPage />} />
+              <Route index element={<Navigate to="customers" replace />} />
+              <Route path="users"         element={<RoleGuard roles={ROLE_GROUPS.SUPER_ONLY}><UsersAdminPage /></RoleGuard>} />
+              <Route path="departments"   element={<RoleGuard roles={ROLE_GROUPS.SUPER_ONLY}><DepartmentsPage /></RoleGuard>} />
+              <Route path="roles"         element={<RoleGuard roles={ROLE_GROUPS.SUPER_ONLY}><RolesPage /></RoleGuard>} />
               <Route path="categories"    element={<CategoriesPage />} />
               <Route path="products"      element={<ProductsPage />} />
               <Route path="customers"     element={<CustomerManagementPage />} />
               <Route path="retention"     element={<RetentionPage />} />
-              <Route path="settings"      element={<TenantSettingsPage />} />
+              <Route path="settings"      element={<RoleGuard roles={ROLE_GROUPS.SUPER_ONLY}><TenantSettingsPage /></RoleGuard>} />
               <Route path="segments"      element={<SegmentsPage />} />
               <Route path="product-lines" element={<ProductLinesPage />} />
               <Route path="audit"         element={<AuditLogPage />} />
-              <Route path="roles"         element={<RolesPage />} />          {/* Sprint G */}
               <Route path="ocr-templates" element={<OcrTemplatesPage />} />
               <Route path="integrations/docusign" element={<DocuSignSettingsPage />} />
               <Route path="notifications" element={<NotificationPreferencesPage />} />
+              <Route path="email-templates" element={<EmailTemplatesPage />} />
             </Route>
 
             {/* ── eForms ───────────────────────────────────────────── */}
@@ -192,6 +214,9 @@ export default function App() {
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AppRoutes />
         <Toaster position="top-right" />
+        <Suspense fallback={null}>
+          <SessionExpiredModal />
+        </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   )

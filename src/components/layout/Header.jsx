@@ -12,7 +12,7 @@ import { getNotifications, getUnreadCount, markNotificationRead, markAllNotifica
 const PAGE_META = {
   '/dashboard':                    { title: 'Dashboard',        sub: 'Your overview and recent activity' },
   '/documents':                    { title: 'Documents',         sub: 'Manage and access organisational documents' },
-  '/workflow':                     { title: 'My Tasks',          sub: 'Pending approvals and assignments' },
+  '/workflow':                     { title: 'SLA Dashboard',      sub: 'Workflow SLA tracking and overdue alerts' },
   '/admin':                        { title: 'Administration',    sub: 'User management and system settings' },
 
   '/eforms':                       { title: 'eForms',            sub: 'Digital forms and submissions' },
@@ -33,9 +33,12 @@ const PAGE_META = {
   '/admin/ocr-templates':          { title: 'OCR Templates',     sub: 'Manage extraction templates for document categories' },
   '/admin/integrations/docusign':  { title: 'DocuSign Settings', sub: 'Configure DocuSign JWT grant integration' },
   '/admin/notifications':          { title: 'Notification Preferences', sub: 'Manage alert and notification settings' },
+  '/admin/email-templates':        { title: 'Email Templates',          sub: 'Manage email templates for notifications' },
   '/admin/roles':                  { title: 'Roles & Permissions', sub: 'Manage roles and fine-grained permissions' },
+  '/customers/':                    { title: 'Customer Portfolio',  sub: 'Customer document portfolio and case history' },
   '/cases':                        { title: 'Cases',              sub: 'Loan applications, account openings, and document packages' },
-  '/backoffice/queue':             { title: 'Review Queue',      sub: 'Unassigned and in-progress review tasks' },
+  '/cases/':                       { title: 'Case Detail',        sub: 'Case management and document checklist' },
+  '/backoffice/queue':             { title: 'Review Queue',      sub: 'Tasks assigned to you and your group' },
   '/workflow/designer':            { title: 'Workflow Designer', sub: 'Design and publish workflow templates' },
   '/eforms/fill':                  { title: 'Fill Form',         sub: 'Complete and submit an eForm' },
 }
@@ -90,15 +93,16 @@ export default function Header({ pathname }) {
   }
 
   return (
-    <header className="h-16 bg-white border-b border-gray-100
+    <header className="h-16 border-b border-gray-100
                        flex items-center justify-between px-6 flex-shrink-0
-                       shadow-sm">
+                       shadow-sm"
+            style={{ backgroundColor: 'var(--color-header-bg, #ffffff)' }}>
 
       {/* ── Page title ───────────────────────────────────────── */}
       <div className="flex items-center gap-4">
         <div className="w-0.5 h-8 rounded-full bg-accent-500 flex-shrink-0" />
         <div>
-          <h1 className="text-lg font-bold text-gray-900 leading-tight">
+          <h1 className="text-lg font-bold leading-tight" style={{ color: 'var(--color-header-text, #111827)' }}>
             {isDashboard && firstName ? `Welcome back, ${firstName}` : meta.title}
           </h1>
           <p className="text-[11px] text-gray-400 font-medium hidden sm:block">

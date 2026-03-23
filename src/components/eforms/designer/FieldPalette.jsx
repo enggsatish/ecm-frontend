@@ -65,9 +65,10 @@ function PaletteTile({ item }) {
   );
 }
 
-export default function FieldPalette() {
+export default function FieldPalette({ style }) {
   return (
-    <aside className="w-52 flex-shrink-0 bg-gray-50 border-r border-gray-200 overflow-y-auto flex flex-col">
+    <aside className="flex-shrink-0 bg-gray-50 border-r border-gray-200 overflow-y-auto flex flex-col"
+           style={{ width: 208, ...style }}>
       <div className="px-3 py-3 border-b border-gray-200">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Field Types</p>
         <p className="text-xs text-gray-400 mt-0.5">Drag onto canvas</p>

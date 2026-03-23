@@ -24,6 +24,10 @@ const LAYOUTS = [
   { value: 'MULTI_PAGE',   label: 'Multi Page (Wizard)' },
   { value: 'ACCORDION',    label: 'Accordion' },
 ];
+const LABEL_POSITIONS = [
+  { value: 'inline', label: 'Inline (label left, input right)' },
+  { value: 'top',    label: 'Stacked (label above input)' },
+];
 const PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 const ROLES = [
   { value: '',               label: 'Use workflow default' },
@@ -34,7 +38,7 @@ const ROLES = [
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function FormSettingsPanel() {
+export default function FormSettingsPanel({ style }) {
   const { meta, schema, updateMeta, updateSchemaSettings } = useEFormsDesignerStore();
 
   // Fetch all active workflow definitions from ecm-workflow
@@ -86,7 +90,8 @@ export default function FormSettingsPanel() {
   };
 
   return (
-    <aside className="w-72 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+    <aside className="flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden"
+           style={{ width: style?.width ?? 320 }}>
       {/* Panel header */}
       <div className="px-4 py-3 border-b border-gray-200">
         <p className="text-xs font-semibold text-gray-700">Form Settings</p>
@@ -171,6 +176,17 @@ export default function FormSettingsPanel() {
               className={inputCls}
             >
               {LAYOUTS.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Label Position" hint="how field labels appear on the form and PDF">
+            <select
+              value={schema.labelPosition || 'inline'}
+              onChange={(e) => updateSchemaSettings({ labelPosition: e.target.value })}
+              className={inputCls}
+            >
+              {LABEL_POSITIONS.map((l) => (
                 <option key={l.value} value={l.value}>{l.label}</option>
               ))}
             </select>

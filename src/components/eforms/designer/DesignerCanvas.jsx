@@ -4,20 +4,41 @@
  * Renders sections + fields. Accepts drag-drop from FieldPalette.
  * Fields can be reordered within a section via drag handles.
  */
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from 'lucide-react';
 import { useEFormsDesignerStore } from '../../../store/eformsStore';
 
 export default function DesignerCanvas() {
-  const { schema, meta, addSection, selectedFieldId, selectField } = useEFormsDesignerStore();
+  const { schema, meta, addSection, selectedFieldId, selectField, getSelectedField, removeField } = useEFormsDesignerStore();
+  const isInline = (schema.labelPosition || 'inline') === 'inline';
+
+  // Delete key removes selected field
+  const handleKeyDown = useCallback((e) => {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFieldId) {
+      // Don't delete if user is typing in an input
+      const tag = e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      e.preventDefault()
+      const selected = getSelectedField()
+      if (selected) removeField(selected.sectionId, selected.field.id)
+    }
+  }, [selectedFieldId, getSelectedField, removeField])
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
 
   const isEmpty = schema.sections.length === 0;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-100 p-6">
-      {/* Form preview header */}
-      <div className="max-w-3xl mx-auto mb-4">
-        <div className="bg-white rounded-xl border border-gray-200 px-6 py-4 shadow-sm">
+    <div className="flex-1 overflow-y-auto bg-gray-200/60 p-6">
+      {/* A4 paper canvas */}
+      <div className="mx-auto bg-white shadow-lg rounded-sm border border-gray-300/50"
+           style={{ width: '210mm', minHeight: '297mm', maxWidth: '100%' }}>
+
+        {/* Form title block — like a real paper header */}
+        <div className="px-10 pt-10 pb-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-800">
             {meta.name || 'Untitled Form'}
           </h2>
@@ -25,29 +46,40 @@ export default function DesignerCanvas() {
             {meta.description || 'No description'}
           </p>
         </div>
-      </div>
 
-      <div className="max-w-3xl mx-auto space-y-4">
-        {isEmpty ? (
-          <EmptyCanvas onAddSection={addSection} />
-        ) : (
-          schema.sections.map((section) => (
-            <SectionBlock key={section.id} section={section} selectedFieldId={selectedFieldId} />
-          ))
-        )}
+        {/* Form body */}
+        <div className="px-10 py-6 space-y-4">
+          {isEmpty ? (
+            <EmptyCanvas onAddSection={addSection} />
+          ) : (
+            schema.sections.map((section) => (
+              <SectionBlock key={section.id} section={section} selectedFieldId={selectedFieldId} isInline={isInline} />
+            ))
+          )}
 
-        {/* Add section button */}
-        {!isEmpty && (
-          <button
-            onClick={addSection}
-            className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-sm
-                       text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-colors
-                       flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Section
-          </button>
-        )}
+          {/* Add section button */}
+          {!isEmpty && (
+            <button
+              onClick={addSection}
+              className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-sm
+                         text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-colors
+                         flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Add Section
+            </button>
+          )}
+        </div>
+
+        {/* Paper footer — QR code placeholder */}
+        <div className="px-10 py-4 border-t border-gray-100 mt-auto">
+          <div className="flex items-center justify-between">
+            <p className="text-[9px] text-gray-300">ECM Form &mdash; QR code will appear here in PDF</p>
+            <div className="w-10 h-10 border border-dashed border-gray-200 rounded flex items-center justify-center">
+              <span className="text-[8px] text-gray-300">QR</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -98,7 +130,7 @@ function EmptyCanvas({ onAddSection }) {
 }
 
 // ─── Section Block ────────────────────────────────────────────────────────────
-function SectionBlock({ section, selectedFieldId }) {
+function SectionBlock({ section, selectedFieldId, isInline }) {
   const {
     updateSection,
     removeSection,
@@ -199,6 +231,7 @@ function SectionBlock({ section, selectedFieldId }) {
                   key={field.id}
                   field={field}
                   idx={idx}
+                  isInline={isInline}
                   isSelected={selectedFieldId === field.id}
                   isDragOver={dragOverIdx === idx}
                   isDragging={draggingFieldIdx === idx}
@@ -226,8 +259,9 @@ function SectionBlock({ section, selectedFieldId }) {
 }
 
 // ─── Field Card ───────────────────────────────────────────────────────────────
-function FieldCard({ field, idx, isSelected, isDragOver, isDragging, onSelect, onDragStart, onDragOver, onDrop }) {
+function FieldCard({ field, idx, isInline, isSelected, isDragOver, isDragging, onSelect, onDragStart, onDragOver, onDrop }) {
   const colClass = colSpanClass(field.colSpan || 6);
+  const isDisplayOnly = ['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER'].includes(field.type);
 
   return (
     <div
@@ -247,24 +281,41 @@ function FieldCard({ field, idx, isSelected, isDragOver, isDragging, onSelect, o
             : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-sm'
           }`}
       >
-        <div className="flex items-start gap-1.5">
-          <GripVertical className="w-3.5 h-3.5 text-gray-300 cursor-grab mt-0.5 flex-shrink-0 group-hover:text-gray-400" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-gray-700 truncate">
+        {isInline && !isDisplayOnly ? (
+          <div className="flex items-center gap-3">
+            <GripVertical className="w-3.5 h-3.5 text-gray-300 cursor-grab flex-shrink-0 group-hover:text-gray-400" />
+            <span className="text-xs font-medium text-gray-700 w-32 flex-shrink-0 text-right truncate">
               {field.label || '—'}
               {field.required && <span className="text-red-400 ml-0.5">*</span>}
-            </p>
-            <p className="text-xs text-gray-400 truncate font-mono">{field.type}</p>
+            </span>
+            <div className="flex-1 min-w-0">
+              <FieldPreview field={field} inline />
+            </div>
+            <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">{field.type}</span>
           </div>
-        </div>
-        <FieldPreview field={field} />
+        ) : (
+          <>
+            <div className="flex items-start gap-1.5">
+              <GripVertical className="w-3.5 h-3.5 text-gray-300 cursor-grab mt-0.5 flex-shrink-0 group-hover:text-gray-400" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-700 truncate">
+                  {field.label || '—'}
+                  {field.required && <span className="text-red-400 ml-0.5">*</span>}
+                </p>
+                <p className="text-xs text-gray-400 truncate font-mono">{field.type}</p>
+              </div>
+            </div>
+            <FieldPreview field={field} />
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function FieldPreview({ field }) {
-  const cls = 'mt-1.5 w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-400 pointer-events-none';
+function FieldPreview({ field, inline = false }) {
+  const mt = inline ? '' : 'mt-1.5';
+  const cls = `${mt} w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-400 pointer-events-none`;
 
   switch (field.type) {
     case 'TEXT_INPUT':
@@ -272,7 +323,7 @@ function FieldPreview({ field }) {
     case 'PHONE':
       return <div className={cls}>{field.placeholder || 'Text input...'}</div>;
     case 'TEXT_AREA':
-      return <div className={`${cls} h-10`}>{field.placeholder || 'Text area...'}</div>;
+      return <div className={`${cls} ${inline ? '' : 'h-10'}`}>{field.placeholder || 'Text area...'}</div>;
     case 'NUMBER':
       return <div className={cls}>0</div>;
     case 'DATE':
@@ -281,20 +332,20 @@ function FieldPreview({ field }) {
       return <div className={`${cls} flex justify-between`}><span>Select...</span><span>▾</span></div>;
     case 'OPTION_BUTTON':
       return (
-        <div className="mt-1.5 flex flex-wrap gap-1">
+        <div className={`${mt} flex flex-wrap gap-1`}>
           {(field.options || []).slice(0, 3).map((o) => (
             <span key={o.value} className="text-xs px-2 py-0.5 rounded-full border border-gray-200 text-gray-400">{o.label}</span>
           ))}
         </div>
       );
     case 'CHECKBOX':
-      return <div className="mt-1.5 flex items-center gap-1"><span className="w-3 h-3 border border-gray-300 rounded inline-block" /><span className="text-xs text-gray-400">Checkbox</span></div>;
+      return <div className={`${mt} flex items-center gap-1`}><span className="w-3 h-3 border border-gray-300 rounded inline-block" /><span className="text-xs text-gray-400">Checkbox</span></div>;
     case 'SECTION_HEADER':
       return <div className="mt-1 border-b border-gray-300" />;
     case 'PARAGRAPH':
       return <div className="mt-1 text-xs text-gray-400 line-clamp-2">{field.label}</div>;
     case 'DIVIDER':
-      return <div className="mt-1.5 border-t border-gray-200" />;
+      return <div className={`${mt} border-t border-gray-200`} />;
     default:
       return null;
   }

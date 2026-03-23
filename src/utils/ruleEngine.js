@@ -156,9 +156,9 @@ function evaluateClause(clause, data) {
 
   switch (clause.operator) {
     case 'EQUALS':
-      return String(val ?? '').toLowerCase() === String(ruleVal ?? '').toLowerCase();
+      return normalizeForCompare(val) === normalizeForCompare(ruleVal);
     case 'NOT_EQUALS':
-      return String(val ?? '').toLowerCase() !== String(ruleVal ?? '').toLowerCase();
+      return normalizeForCompare(val) !== normalizeForCompare(ruleVal);
 
     case 'IS_EMPTY':
       return val == null || String(val).trim() === '';
@@ -213,6 +213,18 @@ function evaluateClause(clause, data) {
     default:
       return false;
   }
+}
+
+// ── Value normalization ───────────────────────────────────────────────────────
+
+/**
+ * Normalize values for EQUALS/NOT_EQUALS comparison.
+ * Handles: boolean true/false vs string "true"/"false" (checkbox fields),
+ * and case-insensitive string matching.
+ */
+function normalizeForCompare(val) {
+  if (val === true || val === false) return String(val);
+  return String(val ?? '').toLowerCase();
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────────────

@@ -111,6 +111,7 @@ function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, su
         draft: false,
         ...(partyContext?.partyExternalId && { partyExternalId: partyContext.partyExternalId }),
         ...(submissionId && { existingSubmissionId: submissionId }),
+        ...(caseId && { skipWorkflow: true }),  // case-linked forms — case manages review flow
       },
       { onSuccess }
     )

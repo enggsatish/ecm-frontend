@@ -313,21 +313,7 @@ function ProductPanel({ productId, onClose }) {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Case Workflow</label>
-                <select value={form.caseWorkflowKey} onChange={e => setForm(f => ({ ...f, caseWorkflowKey: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">-- No case workflow --</option>
-                  {(wfDefs ?? []).map(w => <option key={w.processKey} value={w.processKey}>{w.name}</option>)}
-                </select>
-                {form.caseWorkflowKey && (
-                  <p className="mt-1 text-[10px] font-mono text-gray-400">key: {form.caseWorkflowKey}</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Product Schema (JSON)</label>
-                <JsonEditor value={form.productSchema} onChange={v => setForm(f => ({ ...f, productSchema: v }))} />
-              </div>
+              {/* Case Workflow and Product Schema hidden in edit mode too */}
               <div className="flex gap-3 pt-2">
                 <button onClick={handleSave} disabled={update.isPending}
                   className="flex-1 bg-blue-600 text-white text-sm font-medium py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">
@@ -346,17 +332,7 @@ function ProductPanel({ productId, onClose }) {
                     {product.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </div>
-                {product.caseWorkflowKey && (
-                  <div className="flex gap-2"><span className="text-gray-500 w-28">Case Workflow</span><span className="font-mono text-gray-800">{product.caseWorkflowKey}</span></div>
-                )}
                 {product.description && <div className="flex gap-2"><span className="text-gray-500 w-28">Description</span><span className="text-gray-700">{product.description}</span></div>}
-              </div>
-
-              <div className="mt-5">
-                <h4 className="text-sm font-semibold text-gray-800 mb-2">Product Schema</h4>
-                <pre className="bg-gray-950 text-green-300 text-xs rounded-lg p-3 overflow-auto max-h-48 font-mono">
-                  {JSON.stringify(product.productSchema ?? {}, null, 2)}
-                </pre>
               </div>
 
               <DocumentChecklist product={product} />
@@ -368,8 +344,160 @@ function ProductPanel({ productId, onClose }) {
   );
 }
 
+// ── Inline Document Types (for product creation) ─────────────────────────
+function InlineDocumentTypes({ items, onChange }) {
+  const [showAdd, setShowAdd] = useState(false)
+  const [row, setRow] = useState({ ...EMPTY_DOC_TYPE })
+
+  const { data: categories } = useCategories(true)
+  const { data: publishedForms } = useQuery({
+    queryKey: ['eforms', 'published'],
+    queryFn: () => apiClient.get('/api/eforms/render').then(r => r.data?.data ?? r.data ?? []),
+    staleTime: 5 * 60_000,
+  })
+
+  const handleAdd = () => {
+    if (!row.name || !row.code || !row.categoryId) {
+      toast.error('Name, code, and category are required')
+      return
+    }
+    // Check for duplicate code
+    if (items.some(i => i.code === row.code.toUpperCase())) {
+      toast.error('Duplicate code: ' + row.code)
+      return
+    }
+    onChange([...items, { ...row, code: row.code.toUpperCase(), sortOrder: items.length }])
+    setRow({ ...EMPTY_DOC_TYPE })
+    setShowAdd(false)
+  }
+
+  const handleRemove = (idx) => {
+    onChange(items.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="block text-xs font-medium text-gray-700">
+          Document Checklist
+          <span className="text-gray-400 font-normal ml-1">({items.length} items)</span>
+        </label>
+        <button type="button" onClick={() => setShowAdd(v => !v)}
+          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium">
+          <Plus size={12} /> Add
+        </button>
+      </div>
+
+      {/* Existing items */}
+      {items.length > 0 && (
+        <div className="rounded-lg border border-gray-200 overflow-hidden mb-2">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-2 py-1.5 text-left text-gray-600">Name</th>
+                <th className="px-2 py-1.5 text-left text-gray-600">Code</th>
+                <th className="px-2 py-1.5 text-left text-gray-600">Source</th>
+                <th className="px-2 py-1.5 text-left text-gray-600">Req</th>
+                <th className="px-2 py-1.5 w-6" />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((dt, idx) => {
+                const cat = (categories ?? []).find(c => String(c.id) === String(dt.categoryId))
+                return (
+                  <tr key={idx} className="border-b border-gray-100 last:border-0">
+                    <td className="px-2 py-1.5 font-medium text-gray-800">
+                      {dt.name}
+                      {cat && <span className="text-gray-400 ml-1">({cat.code})</span>}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-gray-500">{dt.code}</td>
+                    <td className="px-2 py-1.5">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        dt.sourceType === 'EFORM' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                      }`}>{dt.sourceType}</span>
+                    </td>
+                    <td className="px-2 py-1.5 text-gray-500">{dt.isRequired ? 'Yes' : 'No'}</td>
+                    <td className="px-2 py-1.5">
+                      <button onClick={() => handleRemove(idx)} className="text-red-400 hover:text-red-600">
+                        <X size={11} />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {items.length === 0 && !showAdd && (
+        <p className="text-xs text-gray-400 italic mb-2">No document types yet. Add documents required for this product.</p>
+      )}
+
+      {/* Add row */}
+      {showAdd && (
+        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-2 mb-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input value={row.name} placeholder="Name (e.g. Government ID)"
+              onChange={e => setRow(r => ({ ...r, name: e.target.value }))}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none" />
+            <input value={row.code} placeholder="Code (e.g. GOV_ID)"
+              onChange={e => setRow(r => ({ ...r, code: e.target.value.toUpperCase() }))}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs font-mono focus:outline-none" />
+          </div>
+          <select value={row.categoryId}
+            onChange={e => setRow(r => ({ ...r, categoryId: e.target.value }))}
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none">
+            <option value="">Select category...</option>
+            {(categories ?? []).filter(c => c.isActive !== false).map(c =>
+              <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+            )}
+          </select>
+          <div className="grid grid-cols-3 gap-2">
+            <select value={row.sourceType}
+              onChange={e => setRow(r => ({ ...r, sourceType: e.target.value, formDefinitionId: '' }))}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none">
+              {SOURCE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={row.onUploadAction}
+              onChange={e => setRow(r => ({ ...r, onUploadAction: e.target.value }))}
+              className="border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none">
+              {UPLOAD_ACTIONS.map(a => <option key={a} value={a}>{a.replace('_', ' ')}</option>)}
+            </select>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600">
+              <input type="checkbox" checked={row.isRequired}
+                onChange={e => setRow(r => ({ ...r, isRequired: e.target.checked }))}
+                className="rounded" />
+              Required
+            </label>
+          </div>
+          {row.sourceType === 'EFORM' && (
+            <select value={row.formDefinitionId}
+              onChange={e => setRow(r => ({ ...r, formDefinitionId: e.target.value }))}
+              className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none">
+              <option value="">Select form template...</option>
+              {(Array.isArray(publishedForms) ? publishedForms : []).map(f =>
+                <option key={f.formKey} value={f.id}>{f.name} ({f.formKey})</option>
+              )}
+            </select>
+          )}
+          <div className="flex gap-2">
+            <button onClick={handleAdd}
+              className="flex-1 bg-blue-600 text-white text-xs py-1.5 rounded hover:bg-blue-700">
+              Add
+            </button>
+            <button onClick={() => setShowAdd(false)} className="text-xs text-gray-500 px-2">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
-const EMPTY = { productCode: '', displayName: '', description: '', productSchema: '{}', caseWorkflowKey: '', segmentId: '', productLineId: '' };
+const EMPTY = { productCode: '', displayName: '', description: '', productSchema: '{}', caseWorkflowKey: '', segmentId: '', productLineId: '', documentTypes: [] };
+
+const EMPTY_DOC_TYPE = { name: '', code: '', categoryId: '', sourceType: 'UPLOAD', formDefinitionId: '', onUploadAction: 'OCR_ONLY', isRequired: true, sortOrder: 0 };
 
 export default function ProductsPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -396,11 +524,16 @@ export default function ProductsPage() {
   const products = Array.isArray(data) ? data : (data?.content ?? []);
   const totalPages = data?.totalPages ?? 1;
 
-  const handleCreate = () => {
+  const addDocType = useAddDocumentType();
+
+  const handleCreate = async () => {
     let schema;
     try { schema = JSON.parse(form.productSchema); }
     catch { toast.error('Invalid JSON schema'); return; }
     if (!form.productCode.trim() || !form.displayName.trim()) { toast.error('Code and Name required'); return; }
+
+    const docTypes = form.documentTypes || [];
+
     create.mutate({
       ...form,
       productSchema: schema,
@@ -408,7 +541,27 @@ export default function ProductsPage() {
       segmentId: form.segmentId ? Number(form.segmentId) : null,
       productLineId: form.productLineId ? Number(form.productLineId) : null,
     }, {
-      onSuccess: () => { toast.success('Product created'); setShowCreate(false); setForm(EMPTY); },
+      onSuccess: async (product) => {
+        const productId = product?.id;
+        // Add document types sequentially after product creation
+        if (productId && docTypes.length > 0) {
+          let added = 0;
+          for (const dt of docTypes) {
+            try {
+              await addDocType.mutateAsync({ productId, payload: dt });
+              added++;
+            } catch (e) {
+              toast.error(`Failed to add "${dt.name}": ${e?.response?.data?.message || e.message}`);
+            }
+          }
+          if (added > 0) toast.success(`Product created with ${added} document type(s)`);
+          else toast.success('Product created');
+        } else {
+          toast.success('Product created');
+        }
+        setShowCreate(false);
+        setForm(EMPTY);
+      },
       onError: () => toast.error('Create failed'),
     });
   };
@@ -452,14 +605,13 @@ export default function ProductsPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Product</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Code</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Workflow</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
               {products.length === 0 ? (
-                <tr><td colSpan={5} className="py-12 text-center text-gray-400 text-sm">No products found.</td></tr>
+                <tr><td colSpan={4} className="py-12 text-center text-gray-400 text-sm">No products found.</td></tr>
               ) : products.map(p => (
                 <tr key={p.id} onClick={() => setSelectedId(p.id)}
                   className={`border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors ${!p.isActive ? 'opacity-60' : ''}`}>
@@ -473,7 +625,6 @@ export default function ProductsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm font-mono text-gray-600">{p.productCode}</td>
-                  <td className="px-4 py-3 text-xs font-mono text-gray-500">{p.caseWorkflowKey || '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
                       {p.isActive ? 'Active' : 'Inactive'}
@@ -559,18 +710,15 @@ export default function ProductsPage() {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Case Workflow</label>
-                <select value={form.caseWorkflowKey} onChange={e => setForm(f => ({ ...f, caseWorkflowKey: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">-- No case workflow --</option>
-                  {(wfDefs ?? []).map(w => <option key={w.processKey} value={w.processKey}>{w.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Product Schema (JSON)</label>
-                <JsonEditor value={form.productSchema} onChange={v => setForm(f => ({ ...f, productSchema: v }))} />
-              </div>
+              {/* Case Workflow and Product Schema hidden — not actively used.
+                  Case transitions handled by state machine, document workflows per checklist item. */}
+
+              {/* ── Inline Document Checklist ── */}
+              <InlineDocumentTypes
+                items={form.documentTypes}
+                onChange={items => setForm(f => ({ ...f, documentTypes: items }))}
+              />
+
               <div className="flex gap-3 pt-2">
                 <button onClick={handleCreate} disabled={create.isPending}
                   className="flex-1 bg-blue-600 text-white text-sm font-medium py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">

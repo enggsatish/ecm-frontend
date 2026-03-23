@@ -11,6 +11,7 @@ import { create } from 'zustand';
 
 const DEFAULT_SCHEMA = {
   layout: 'SINGLE_PAGE',
+  labelPosition: 'inline',   // 'inline' (label left, input right) | 'top' (label above input)
   allowSaveDraft: true,
   confirmOnSubmit: false,
   submitButtonLabel: 'Submit',

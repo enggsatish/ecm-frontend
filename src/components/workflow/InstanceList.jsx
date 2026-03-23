@@ -86,7 +86,7 @@ const PAGE_SIZE = 20
 export default function InstanceList() {
   const qc = useQueryClient()
   const { hasRole } = useUserStore()
-  const isAdmin = hasRole('ECM_ADMIN')
+  const isAdmin = hasRole('ECM_ADMIN') || hasRole('ECM_SUPER_ADMIN')
   const [page, setPage] = useState(0)
   const [sort, setSort] = useState({ field: 'createdAt', dir: 'desc' })
 

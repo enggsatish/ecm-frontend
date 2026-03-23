@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { oktaAuth } from '../utils/oktaConfig'
+import { oktaAuth, fireSessionExpired } from '../utils/oktaConfig'
 
 const apiClient = axios.create({
   //baseURL: 'http://localhost:8080',
@@ -41,14 +41,26 @@ apiClient.interceptors.response.use(
   async (error) => {
     const status = error.response?.status
 
-    // 401 = token expired or invalid → redirect to Okta login
+    // 401 = token expired or invalid
     if (status === 401) {
-      try {
-        await oktaAuth.signInWithRedirect()
-      } catch (redirectErr) {
-        console.error('Redirect to login failed', redirectErr)
+      // Only attempt renewal if we had a token (not pre-login 401s)
+      const existingToken = await oktaAuth.getAccessToken().catch(() => null)
+      if (existingToken) {
+        try {
+          await oktaAuth.tokenManager.renew('accessToken')
+          const newToken = await oktaAuth.getAccessToken()
+          if (newToken) {
+            error.config.headers.Authorization = `Bearer ${newToken}`
+            return apiClient.request(error.config)
+          }
+        } catch (renewErr) {
+          // Renewal failed — show session expired modal
+          fireSessionExpired()
+          return new Promise(() => {})
+        }
       }
-      // Return a never-resolving promise so no downstream error handling runs
+      // No existing token — this is a pre-login 401, let Okta handle it
+      await oktaAuth.signInWithRedirect().catch(() => {})
       return new Promise(() => {})
     }
 

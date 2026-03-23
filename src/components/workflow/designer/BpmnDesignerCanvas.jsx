@@ -13,10 +13,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Save, Loader2, ZoomIn, ZoomOut, Maximize2, Code, Download,
-  AlertTriangle, ChevronDown, ChevronRight, Info,
+  AlertTriangle, ChevronDown, ChevronRight, Info, Eye, Pencil,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { saveTemplateBpmn, getTemplateBpmnXml } from '../../../api/workflowApi';
+import { saveTemplateBpmn, getTemplateBpmnXml, getTemplate } from '../../../api/workflowApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHAPE ICONS — simple monochrome SVGs for the clean palette
@@ -81,11 +81,12 @@ function Field({ label, children, hint }) {
   );
 }
 
-function Input({ value, onChange, placeholder, mono }) {
+function Input({ value, onChange, placeholder, mono, onBlur }) {
   return (
     <input
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       className={`w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm
         focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400
@@ -113,23 +114,6 @@ function Select({ value, onChange, options }) {
 const getFlowAttr = (el, key) =>
   el?.businessObject?.$attrs?.[`flowable:${key}`] ?? '';
 
-// Helper: write a flowable:X attribute via bpmn-js modeling
-const setFlowAttr = (modeler, el, key, value) => {
-  const modeling = modeler.get('modeling');
-  const currentAttrs = el.businessObject.$attrs || {};
-  modeling.updateProperties(el, {
-    $attrs: { ...currentAttrs, [`flowable:${key}`]: value },
-  });
-};
-
-// Helper: delete a flowable:X attribute
-const delFlowAttr = (modeler, el, key) => {
-  const modeling = modeler.get('modeling');
-  const currentAttrs = { ...(el.businessObject.$attrs || {}) };
-  delete currentAttrs[`flowable:${key}`];
-  modeling.updateProperties(el, { $attrs: currentAttrs });
-};
-
 // Parse condition body to a known decision keyword or CUSTOM
 function parseCondition(el) {
   const body = el?.businessObject?.conditionExpression?.body ?? '';
@@ -144,6 +128,66 @@ function buildConditionBody(decision) {
   return `\${decision == '${decision}'}`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-apply hook: debounces property changes (500ms) so rapid keystrokes
+// become a single commandStack entry. This makes Ctrl+Z undo meaningful
+// (undo a whole name change, not individual characters).
+//
+// Returns a flush() function that callers (save, XML view) can use to
+// ensure pending changes are applied before exporting.
+// ─────────────────────────────────────────────────────────────────────────────
+const pendingFlushes = new Set();
+
+function useAutoApply(el, modeler, buildProps, deps) {
+  const ready = useRef(false);
+  const timerRef = useRef(null);
+  const buildPropsRef = useRef(buildProps);
+  buildPropsRef.current = buildProps;
+
+  // Block auto-apply for 100ms after element selection (skip initial state load)
+  useEffect(() => {
+    ready.current = false;
+    const timer = setTimeout(() => { ready.current = true; }, 100);
+    return () => clearTimeout(timer);
+  }, [el]);
+
+  useEffect(() => {
+    if (!ready.current || !el || !modeler) return;
+
+    // Clear previous pending timer
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    const apply = () => {
+      timerRef.current = null;
+      pendingFlushes.delete(apply);
+      try {
+        const props = buildPropsRef.current();
+        if (props) {
+          modeler.get('modeling').updateProperties(el, props);
+        }
+      } catch (e) {
+        console.warn('[BpmnDesigner] Auto-apply failed:', e.message);
+      }
+    };
+
+    // Register for flush-before-save
+    pendingFlushes.add(apply);
+    timerRef.current = setTimeout(apply, 500);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      pendingFlushes.delete(apply);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
+
+// Flush all pending auto-apply timers immediately (call before save/XML export)
+function flushPendingApplies() {
+  pendingFlushes.forEach(fn => fn());
+  pendingFlushes.clear();
+}
+
 // ── START EVENT PROPERTIES ───────────────────────────────────────────────────
 function StartEventProps({ el, modeler }) {
   const [name, setName] = useState(el.businessObject.name ?? '');
@@ -154,8 +198,10 @@ function StartEventProps({ el, modeler }) {
     setInitiator(getFlowAttr(el, 'initiator') || 'initiator');
   }, [el]);
 
-  const applyName = () => modeler.get('modeling').updateProperties(el, { name });
-  const applyInitiator = () => setFlowAttr(modeler, el, 'initiator', initiator);
+  useAutoApply(el, modeler, () => ({
+    name,
+    'flowable:initiator': initiator,
+  }), [name, initiator]);
 
   return (
     <div className="space-y-4">
@@ -168,12 +214,10 @@ function StartEventProps({ el, modeler }) {
       </div>
       <Field label="Label">
         <Input value={name} onChange={setName} placeholder="Start" />
-        <button onClick={applyName} className="mt-1 text-xs text-blue-600 hover:underline">Apply</button>
       </Field>
       <Field label="Initiator Variable"
         hint="Process variable that will hold the submitter's userId">
         <Input value={initiator} onChange={setInitiator} placeholder="initiator" mono />
-        <button onClick={applyInitiator} className="mt-1 text-xs text-blue-600 hover:underline">Apply</button>
       </Field>
     </div>
   );
@@ -207,18 +251,19 @@ function UserTaskProps({ el, modeler }) {
     }
   }, [el]);
 
-  const apply = () => {
-    modeler.get('modeling').updateProperties(el, { name });
+  useAutoApply(el, modeler, () => {
     const finalGroup = groupSel === 'CUSTOM' ? groupRaw : groupSel;
+    const props = { name };
+
     if (finalGroup) {
-      setFlowAttr(modeler, el, 'candidateGroups', finalGroup);
-      delFlowAttr(modeler, el, 'assignee');
+      props['flowable:candidateGroups'] = finalGroup;
+      props['flowable:assignee'] = undefined;
+    } else if (assignee) {
+      props['flowable:assignee'] = assignee;
     }
-    if (assignee && !finalGroup) {
-      setFlowAttr(modeler, el, 'assignee', assignee);
-    }
-    toast.success('Task updated');
-  };
+
+    return props;
+  }, [name, groupSel, groupRaw, assignee]);
 
   return (
     <div className="space-y-4">
@@ -257,13 +302,6 @@ function UserTaskProps({ el, modeler }) {
           placeholder="${initiator} or specific userId" mono />
       </Field>
 
-      <button
-        onClick={apply}
-        className="w-full rounded-lg bg-blue-600 text-white text-xs font-semibold py-2 hover:bg-blue-700"
-      >
-        Apply Changes
-      </button>
-
       <div className="bg-slate-50 rounded-lg p-3 text-xs font-mono text-slate-500 break-all">
         flowable:candidateGroups="{groupSel === 'CUSTOM' ? groupRaw : groupSel}"
       </div>
@@ -295,16 +333,16 @@ function ServiceTaskProps({ el, modeler }) {
     delegateSel === '${docuSignStubDelegate}' ||
     delegateRaw.includes('docuSign');
 
-  const apply = () => {
-    modeler.get('modeling').updateProperties(el, { name });
+  useAutoApply(el, modeler, () => {
     const finalDelegate = delegateSel === 'CUSTOM' ? delegateRaw : delegateSel;
-    if (finalDelegate) setFlowAttr(modeler, el, 'delegateExpression', finalDelegate);
+    const props = { name };
+    if (finalDelegate) props['flowable:delegateExpression'] = finalDelegate;
     if (isDocuSign) {
-      if (dsSubject) setFlowAttr(modeler, el, 'docusignSubjectTemplate', dsSubject);
-      if (dsEmailVar) setFlowAttr(modeler, el, 'docusignRecipientEmailVar', dsEmailVar);
+      if (dsSubject) props['flowable:docusignSubjectTemplate'] = dsSubject;
+      if (dsEmailVar) props['flowable:docusignRecipientEmailVar'] = dsEmailVar;
     }
-    toast.success('Service task updated');
-  };
+    return props;
+  }, [name, delegateSel, delegateRaw, dsSubject, dsEmailVar]);
 
   return (
     <div className="space-y-4">
@@ -355,13 +393,6 @@ function ServiceTaskProps({ el, modeler }) {
         </>
       )}
 
-      <button
-        onClick={apply}
-        className="w-full rounded-lg bg-blue-600 text-white text-xs font-semibold py-2 hover:bg-blue-700"
-      >
-        Apply Changes
-      </button>
-
       <div className="bg-slate-50 rounded-lg p-3 text-xs font-mono text-slate-500 break-all">
         flowable:delegateExpression="{delegateSel === 'CUSTOM' ? delegateRaw : delegateSel}"
       </div>
@@ -376,7 +407,7 @@ function GatewayProps({ el, modeler }) {
 
   useEffect(() => setName(el.businessObject.name ?? ''), [el]);
 
-  const apply = () => modeler.get('modeling').updateProperties(el, { name });
+  useAutoApply(el, modeler, () => ({ name }), [name]);
 
   return (
     <div className="space-y-4">
@@ -396,7 +427,6 @@ function GatewayProps({ el, modeler }) {
 
       <Field label="Label">
         <Input value={name} onChange={setName} placeholder={isExclusive ? 'Decision' : 'Parallel'} />
-        <button onClick={apply} className="mt-1 text-xs text-blue-600 hover:underline">Apply</button>
       </Field>
 
       {isExclusive && (
@@ -427,25 +457,21 @@ function SequenceFlowProps({ el, modeler }) {
     if (parsed === 'CUSTOM') setCustomExpr(el.businessObject.conditionExpression?.body ?? '');
   }, [el]);
 
-  const apply = () => {
-    const modeling = modeler.get('modeling');
-    const moddle   = modeler.get('moddle');
-
-    modeling.updateProperties(el, { name });
-
+  useAutoApply(el, modeler, () => {
+    const moddle = modeler.get('moddle');
+    const props = { name };
     if (isFromGateway) {
       if (condition === 'NONE') {
-        modeling.updateProperties(el, { conditionExpression: undefined });
+        props.conditionExpression = undefined;
       } else {
         const body = condition === 'CUSTOM'
           ? customExpr
           : buildConditionBody(condition);
-        const expr = moddle.create('bpmn:FormalExpression', { body });
-        modeling.updateProperties(el, { conditionExpression: expr });
+        props.conditionExpression = moddle.create('bpmn:FormalExpression', { body });
       }
     }
-    toast.success('Flow updated');
-  };
+    return props;
+  }, [name, condition, customExpr]);
 
   return (
     <div className="space-y-4">
@@ -474,13 +500,6 @@ function SequenceFlowProps({ el, modeler }) {
         </Field>
       )}
 
-      <button
-        onClick={apply}
-        className="w-full rounded-lg bg-blue-600 text-white text-xs font-semibold py-2 hover:bg-blue-700"
-      >
-        Apply Changes
-      </button>
-
       {isFromGateway && condition !== 'NONE' && (
         <div className="bg-slate-50 rounded-lg p-3 text-xs font-mono text-slate-500 break-all">
           {condition === 'CUSTOM' ? customExpr : buildConditionBody(condition)}
@@ -504,14 +523,10 @@ function EndEventProps({ el, modeler }) {
 
   const isApproved = name.toLowerCase().includes('approv') || status === 'COMPLETED';
 
-  const apply = () => {
-    modeler.get('modeling').updateProperties(el, { name });
-    const currentAttrs = el.businessObject.$attrs || {};
-    modeler.get('modeling').updateProperties(el, {
-      $attrs: { ...currentAttrs, 'ecm:status': status },
-    });
-    toast.success('End event updated');
-  };
+  useAutoApply(el, modeler, () => ({
+    name,
+    'ecm:status': status,
+  }), [name, status]);
 
   return (
     <div className="space-y-4">
@@ -531,13 +546,6 @@ function EndEventProps({ el, modeler }) {
         hint="Maps to WorkflowInstanceRecord.Status on process end">
         <Select value={status} onChange={setStatus} options={ECM_STATUSES} />
       </Field>
-
-      <button
-        onClick={apply}
-        className="w-full rounded-lg bg-blue-600 text-white text-xs font-semibold py-2 hover:bg-blue-700"
-      >
-        Apply Changes
-      </button>
     </div>
   );
 }
@@ -556,7 +564,7 @@ function EcmPropertiesPanel({ selectedElement, modelerRef }) {
             No Selection
           </div>
           <div className="text-xs text-slate-400 leading-relaxed">
-            Click any shape on the canvas to configure its Flowable properties
+            Click any shape on the canvas to configure its properties
           </div>
         </div>
         <div className="mt-8 w-full space-y-2">
@@ -570,6 +578,10 @@ function EcmPropertiesPanel({ selectedElement, modelerRef }) {
               <span className="text-slate-300 ml-auto">{hint}</span>
             </div>
           ))}
+        </div>
+        <div className="mt-6 text-xs text-slate-400 leading-relaxed text-center">
+          Properties are saved automatically as you edit.
+          <br />Click <strong>Save Workflow</strong> to persist to backend.
         </div>
       </aside>
     );
@@ -612,6 +624,9 @@ function EcmPropertiesPanel({ selectedElement, modelerRef }) {
       <div className="flex-1 overflow-y-auto p-4">
         {renderProps()}
       </div>
+      <div className="px-4 py-2 border-t border-slate-100 text-xs text-slate-400 text-center">
+        Changes apply automatically to the canvas
+      </div>
     </aside>
   );
 }
@@ -620,7 +635,7 @@ function EcmPropertiesPanel({ selectedElement, modelerRef }) {
 // MAIN CANVAS COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function BpmnDesignerCanvas({ templateId, onSaved }) {
+export default function BpmnDesignerCanvas({ templateId, onSaved, readOnly = false }) {
   const containerRef = useRef(null);
   const modelerRef   = useRef(null);
 
@@ -630,33 +645,80 @@ export default function BpmnDesignerCanvas({ templateId, onSaved }) {
   const [rawXml,     setRawXml]     = useState('');
   const [error,      setError]      = useState(null);
   const [selected,   setSelected]   = useState(null);
+  const [dirty,      setDirty]      = useState(false);
+  const [xmlEdited,  setXmlEdited]  = useState(false);
 
 
   // ── Mount bpmn-js modeler ────────────────────────────────────────────────
+  // NOTE: init() is async, so React StrictMode cleanup may run before it
+  // completes. We use `cancelled` flag to abort stale init calls.
   useEffect(() => {
-    let modeler;
+    let cancelled = false;
+    let modelerInstance = null;
 
     async function init() {
       try {
         const { default: BpmnModeler } = await import('bpmn-js/lib/Modeler');
 
-        modeler = new BpmnModeler({ container: containerRef.current });
-        modelerRef.current = modeler;
+        // If cleanup already ran (StrictMode), abort this stale init
+        if (cancelled) return;
+
+        modelerInstance = new BpmnModeler({ container: containerRef.current });
+        modelerRef.current = modelerInstance;
+
+        const eventBus = modelerInstance.get('eventBus');
+
+        // Handle diagram-js errors at the EventBus level to prevent
+        // CommandStack rollback on known rendering errors
+        eventBus.on('error', function(e) {
+          const msg = e?.error?.message || '';
+          if (msg.includes('parentNode') || msg.includes('getPad')) {
+            console.warn('[BpmnDesigner] Suppressed diagram-js error:', msg);
+            return false;
+          }
+        });
+
+        // Patch updateContainments for extra safety
+        const gfxFactory = modelerInstance.get('graphicsFactory');
+        const origUpdateContainments = gfxFactory.updateContainments.bind(gfxFactory);
+        gfxFactory.updateContainments = function(elements) {
+          try {
+            origUpdateContainments(elements);
+          } catch (e) {
+            if (e?.message?.includes('parentNode')) {
+              // Silently ignore — graphics will sync on next render cycle
+            } else {
+              throw e;
+            }
+          }
+        };
 
         // Load existing BPMN from backend
-        const xml = await getTemplateBpmnXml(templateId);
-        await modeler.importXML(xml);
-        modeler.get('canvas').zoom('fit-viewport', 'auto');
+        const tmpl = await getTemplate(templateId);
+        if (cancelled) { modelerInstance.destroy(); return; }
+
+        const xml = tmpl?.bpmnXml || await getTemplateBpmnXml(templateId);
+        if (cancelled) { modelerInstance.destroy(); return; }
+
+        console.log('[BpmnDesigner] Loaded:', tmpl?.bpmnSource, xml?.length, 'chars');
+        await modelerInstance.importXML(xml);
+        if (cancelled) { modelerInstance.destroy(); return; }
+
+        modelerInstance.get('canvas').zoom('fit-viewport', 'auto');
 
         // ── Selection listener ─────────────────────────────────────────────
-        modeler.get('eventBus').on('selection.changed', ({ newSelection }) => {
+        eventBus.on('selection.changed', ({ newSelection }) => {
           setSelected(newSelection?.[0] ?? null);
         });
 
-        // bpmn-js built-in palette is used — no custom palette
+        // Track changes to show dirty indicator
+        eventBus.on('commandStack.changed', () => {
+          setDirty(true);
+        });
 
         setLoading(false);
       } catch (err) {
+        if (cancelled) return;
         console.error('BPMN init error:', err);
         setError(err.message ?? 'Failed to load designer');
         setLoading(false);
@@ -664,7 +726,11 @@ export default function BpmnDesignerCanvas({ templateId, onSaved }) {
     }
 
     init();
-    return () => { modeler?.destroy(); };
+
+    return () => {
+      cancelled = true;
+      modelerInstance?.destroy();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
 
@@ -673,11 +739,17 @@ export default function BpmnDesignerCanvas({ templateId, onSaved }) {
     if (!modelerRef.current) return;
     setSaving(true);
     try {
+      // Flush any pending debounced property changes before exporting
+      flushPendingApplies();
+
       const { xml } = await modelerRef.current.saveXML({ format: true });
       await saveTemplateBpmn(templateId, xml);
-      toast.success('BPMN saved — ready to publish');
+
+      toast.success('Workflow saved');
+      setDirty(false);
       onSaved?.();
     } catch (err) {
+      console.error('[BpmnDesigner] Save failed:', err);
       toast.error(err.response?.data?.message ?? err.message ?? 'Save failed');
     } finally {
       setSaving(false);
@@ -687,11 +759,32 @@ export default function BpmnDesignerCanvas({ templateId, onSaved }) {
   // ── XML view toggle ───────────────────────────────────────────────────────
   const handleToggleXml = useCallback(async () => {
     if (!xmlView && modelerRef.current) {
+      // Flush pending property changes, then capture current modeler state
+      flushPendingApplies();
       const { xml } = await modelerRef.current.saveXML({ format: true });
       setRawXml(xml);
+      setXmlEdited(false);
+    } else if (xmlView && modelerRef.current) {
+      // Switching BACK to visual
+      if (xmlEdited) {
+        // Only re-import if user actually edited the XML in the textarea
+        try {
+          await modelerRef.current.importXML(rawXml);
+          requestAnimationFrame(() => {
+            try {
+              modelerRef.current?.get('canvas').zoom('fit-viewport', 'auto');
+            } catch (_) { /* ignore zoom errors on resize */ }
+          });
+          setDirty(true);
+        } catch (err) {
+          toast.error('Invalid BPMN XML: ' + (err.message || 'parse error'));
+          return; // Stay in XML view so user can fix
+        }
+      }
+      // If not edited, canvas already has the correct state — just hide XML overlay
     }
     setXmlView((v) => !v);
-  }, [xmlView]);
+  }, [xmlView, rawXml, xmlEdited]);
 
   // ── Download ──────────────────────────────────────────────────────────────
   const handleDownload = useCallback(async () => {
@@ -729,56 +822,81 @@ export default function BpmnDesignerCanvas({ templateId, onSaved }) {
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-slate-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-1">
-          <button onClick={() => zoom('in')} title="Zoom in"
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><ZoomIn size={15} /></button>
-          <button onClick={() => zoom('out')} title="Zoom out"
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><ZoomOut size={15} /></button>
-          <button onClick={() => modelerRef.current?.get('canvas').zoom('fit-viewport', 'auto')}
-            title="Fit to view" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
-            <Maximize2 size={15} /></button>
-          <div className="w-px h-4 bg-gray-200 mx-1" />
+          {!xmlView && (
+            <>
+              <button onClick={() => zoom('in')} title="Zoom in"
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><ZoomIn size={15} /></button>
+              <button onClick={() => zoom('out')} title="Zoom out"
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><ZoomOut size={15} /></button>
+              <button onClick={() => modelerRef.current?.get('canvas').zoom('fit-viewport', 'auto')}
+                title="Fit to view" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+                <Maximize2 size={15} /></button>
+              <div className="w-px h-4 bg-gray-200 mx-1" />
+            </>
+          )}
           <button onClick={handleToggleXml}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors
               ${xmlView ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-500'}`}>
-            <Code size={13} /> XML
+            {xmlView ? <><Eye size={13} /> Visual</> : <><Code size={13} /> XML</>}
           </button>
-          <button onClick={handleDownload} title="Download BPMN"
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><Download size={15} /></button>
+          {!xmlView && (
+            <button onClick={handleDownload} title="Download BPMN"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><Download size={15} /></button>
+          )}
         </div>
-        <button onClick={handleSave} disabled={saving || loading}
-          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm">
-          {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-          Save BPMN
-        </button>
+        <div className="flex items-center gap-2">
+          {!readOnly && dirty && (
+            <span className="text-xs text-amber-500 font-medium">Unsaved changes</span>
+          )}
+          {!readOnly && (
+            <button onClick={handleSave} disabled={saving || loading}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm">
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              Save Workflow
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Body: bpmn-js Canvas (with built-in palette) | Properties ────── */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
 
-        {/* Canvas — bpmn-js renders its own palette on the left */}
+        {/* Canvas — ALWAYS mounted to preserve modeler container reference */}
         <div className="flex-1 relative min-w-0">
-          {xmlView ? (
-            <div className="absolute inset-0 overflow-auto bg-gray-950 p-4">
-              <pre className="text-xs text-green-300 font-mono whitespace-pre leading-relaxed">{rawXml}</pre>
-            </div>
-          ) : (
-            <>
-              {loading && (
-                <div className="absolute inset-0 flex items-center justify-center z-10 bg-slate-50">
-                  <Loader2 size={28} className="animate-spin text-gray-400" />
-                  <span className="ml-3 text-sm text-gray-400">Loading designer…</span>
-                </div>
-              )}
-              <div
-                ref={containerRef}
-                style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
+          {/* XML editor overlay — shown on top of canvas */}
+          {xmlView && (
+            <div className="absolute inset-0 z-20 flex flex-col bg-gray-950">
+              <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700">
+                <span className="text-xs text-gray-400 font-mono">BPMN 2.0 XML</span>
+                <span className="text-xs text-gray-500">Edit XML below, then click "Visual" to apply changes</span>
+              </div>
+              <textarea
+                value={rawXml}
+                onChange={(e) => { setRawXml(e.target.value); setXmlEdited(true); setDirty(true); }}
+                spellCheck={false}
+                className="flex-1 w-full bg-gray-950 text-green-300 text-xs font-mono p-4 resize-none
+                  focus:outline-none leading-relaxed"
               />
-            </>
+            </div>
           )}
+
+          {/* bpmn-js canvas — always in DOM, hidden behind XML overlay when needed */}
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center z-10 bg-slate-50">
+              <Loader2 size={28} className="animate-spin text-gray-400" />
+              <span className="ml-3 text-sm text-gray-400">Loading designer…</span>
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
+          />
         </div>
 
-        {/* ECM Properties Panel */}
-        <EcmPropertiesPanel selectedElement={selected} modelerRef={modelerRef} />
+        {/* ECM Properties Panel — hidden in XML view */}
+        {!xmlView && (
+          <EcmPropertiesPanel selectedElement={selected} modelerRef={modelerRef} />
+        )}
       </div>
     </div>
   );

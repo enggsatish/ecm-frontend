@@ -248,7 +248,7 @@ function EmailTemplatesSection() {
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function NotificationPreferencesPage() {
   const { user } = useUserStore()
-  const isAdmin = user?.roles?.includes('ECM_ADMIN')
+  const isAdmin = user?.roles?.some(r => r === 'ECM_ADMIN' || r === 'ECM_SUPER_ADMIN')
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-8">

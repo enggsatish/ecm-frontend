@@ -11,7 +11,7 @@
  * When activePanel === 'rules'    → canvas is replaced by RuleBuilder
  * When activePanel === 'settings' → right panel shows FormSettingsPanel
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Save, Eye, Globe, Settings, Zap, ArrowLeft, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -37,6 +37,34 @@ export default function FormDesignerPage() {
   const isNew = !id || id === 'new';
 
   const [previewMode, setPreviewMode] = useState(false);
+  const [leftW, setLeftW] = useState(208);
+  const [rightW, setRightW] = useState(320);
+  const dragRef = useRef(null);
+
+  const startDrag = useCallback((side) => (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = side === 'left' ? leftW : rightW;
+
+    const onMove = (ev) => {
+      const delta = ev.clientX - startX;
+      const newW = side === 'left'
+        ? Math.max(160, Math.min(400, startW + delta))
+        : Math.max(240, Math.min(500, startW - delta));
+      if (side === 'left') setLeftW(newW);
+      else setRightW(newW);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [leftW, rightW]);
 
   const {
     meta,
@@ -265,15 +293,37 @@ export default function FormDesignerPage() {
 
       {/* Three-panel body */}
       <div className="flex flex-1 overflow-hidden">
-        {activePanel !== 'rules' && <FieldPalette />}
+        {activePanel !== 'rules' && (
+          <>
+            <FieldPalette style={{ width: leftW }} />
+            <div
+              onMouseDown={startDrag('left')}
+              className="w-1.5 flex-shrink-0 bg-gray-200 hover:bg-indigo-400
+                         cursor-col-resize transition-colors relative"
+              title="Drag to resize"
+            >
+              <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+            </div>
+          </>
+        )}
 
         {activePanel === 'rules' ? <RuleBuilder /> : <DesignerCanvas />}
 
-        {activePanel === 'settings'
-          ? <FormSettingsPanel />
-          : activePanel === 'canvas'
-            ? <FieldConfigPanel />
-            : null}
+        {(activePanel === 'settings' || activePanel === 'canvas') && (
+          <>
+            <div
+              onMouseDown={startDrag('right')}
+              className="w-1.5 flex-shrink-0 bg-gray-200 hover:bg-indigo-400
+                         cursor-col-resize transition-colors relative"
+              title="Drag to resize"
+            >
+              <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+            </div>
+            {activePanel === 'settings'
+              ? <FormSettingsPanel style={{ width: rightW }} />
+              : <FieldConfigPanel style={{ width: rightW }} />}
+          </>
+        )}
       </div>
     </div>
   );

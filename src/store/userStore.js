@@ -18,6 +18,18 @@ const useUserStore = create((set, get) => ({
 
   // ── Role helpers ──────────────────────────────────────────────────────────
 
+  /** Returns true if user has ECM_SUPER_ADMIN role */
+  isSuperAdmin: () => {
+    const { user } = get()
+    return user?.roles?.includes('ECM_SUPER_ADMIN') ?? false
+  },
+
+  /** Returns true if user has ECM_ADMIN or ECM_SUPER_ADMIN role */
+  isAdminOrSuper: () => {
+    const { user } = get()
+    return user?.roles?.some(r => r === 'ECM_ADMIN' || r === 'ECM_SUPER_ADMIN') ?? false
+  },
+
   /** Returns true if user has the exact role string */
   hasRole: (role) => {
     const { user } = get()

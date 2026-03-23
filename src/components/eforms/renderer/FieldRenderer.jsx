@@ -102,8 +102,8 @@ export default function FieldRenderer({ field, value, onChange, isRequired, isDi
 
     case 'CHECKBOX':
       return (
-        <label className="flex items-start gap-3 cursor-pointer group">
-          <div className="relative flex-shrink-0 mt-0.5">
+        <label className="inline-flex items-center gap-2.5 cursor-pointer group select-none">
+          <div className="relative flex-shrink-0">
             <input
               type="checkbox"
               checked={!!value}
@@ -120,7 +120,7 @@ export default function FieldRenderer({ field, value, onChange, isRequired, isDi
               )}
             </div>
           </div>
-          <span className="text-sm text-gray-700">{field.label}</span>
+          <span className="text-sm text-gray-700 leading-none">{field.label}</span>
         </label>
       );
 

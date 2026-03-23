@@ -7,18 +7,23 @@ import {
   getProducts, getProduct, createProduct, updateProduct, deactivateProduct,
   addDocumentType, removeDocumentType, getWorkflowDefinitions,
   getRetentionPolicies, createRetentionPolicy, updateRetentionPolicy, deactivateRetentionPolicy,
-  getTenantConfig, updateConfigKey, bulkUpdateConfig,
+  getTenantConfig, updateConfigKey, bulkUpdateConfig, resetConfigToDefaults,
   // Sprint-C
   getHierarchy, getSegments, createSegment, updateSegment,
   getProductLines, createProductLine, updateProductLine,
   getAuditLog,
   listCustomers, getCustomer, createCustomer, updateCustomer, deactivateCustomer,
-  addEnrollment, removeEnrollment,
+  addEnrollment, removeEnrollment, getCustomerPortfolio,
   getRoles, getRole, createRole, updateRole, deleteRole,
   addPermissionToRole, removePermissionFromRole, applyBundleToRole,
   getPermissions, getBundles,
   getOcrTemplates, getOcrTemplate, createOcrTemplate, updateOcrTemplate, deleteOcrTemplate,
   listCases, getCase, createCase, updateCaseStatus, linkCaseDocument, waiveCaseItem,
+  startChecklistWorkflow, getCaseTimeline,
+  requestOverride, listOverrideRequests, reviewOverrideRequest, adminBypassItem,
+  assignCase, claimCase, verifyItems, requestAdditionalDocs,
+  listParticipants, addParticipant, removeParticipant, shareDocumentsWithParticipant,
+  getEmailTemplates, getEmailTemplate, updateEmailTemplate,
 } from '../api/adminApi';
 
 // ── Users ──────────────────────────────────────────────────────────────────
@@ -268,6 +273,14 @@ export const useBulkUpdateConfig = () => {
   });
 };
 
+export const useResetConfigToDefaults = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => resetConfigToDefaults(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'tenant-config'] }),
+  });
+};
+
 // ══════════════════════════════════════════════════════════════════
 // Sprint-C: Hierarchy & Audit hooks
 // ══════════════════════════════════════════════════════════════════
@@ -488,6 +501,14 @@ export const useCustomerDetail = (id) =>
     enabled: !!id,
   });
 
+export const useCustomerPortfolio = (id) =>
+  useQuery({
+    queryKey: ['admin', 'customer-portfolio', id],
+    queryFn: () => getCustomerPortfolio(id),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
 export const useRoles = () =>
   useQuery({
     queryKey: ['admin', 'roles'],
@@ -655,5 +676,162 @@ export const useWaiveCaseItem = () => {
   return useMutation({
     mutationFn: ({ caseId, itemId, payload }) => waiveCaseItem(caseId, itemId, payload),
     onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }),
+  });
+};
+
+// ── Checklist Workflow Bridge ─────────────────────────────────────────────
+
+export const useStartChecklistWorkflow = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, itemId }) => startChecklistWorkflow(caseId, itemId),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }),
+  });
+};
+
+// ── Case Timeline ─────────────────────────────────────────────────────────
+
+export const useCaseTimeline = (caseId) =>
+  useQuery({
+    queryKey: ['admin', 'case-timeline', caseId],
+    queryFn: () => getCaseTimeline(caseId),
+    enabled: !!caseId,
+    staleTime: 30_000,
+  });
+
+// ── Override System ───────────────────────────────────────────────────────
+
+export const useRequestOverride = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, itemId, payload }) => requestOverride(caseId, itemId, payload),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }),
+  });
+};
+
+export const useOverrideRequests = (params = {}) =>
+  useQuery({
+    queryKey: ['admin', 'override-requests', params],
+    queryFn: () => listOverrideRequests(params),
+    staleTime: 30_000,
+  });
+
+export const useReviewOverrideRequest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, payload }) => reviewOverrideRequest(requestId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'override-requests'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'case'] });
+    },
+  });
+};
+
+export const useAdminBypassItem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, itemId, payload }) => adminBypassItem(caseId, itemId, payload),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }),
+  });
+};
+
+export const useAssignCase = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, payload }) => assignCase(caseId, payload),
+    onSuccess: (_, { caseId }) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] });
+      qc.invalidateQueries({ queryKey: ['admin', 'cases'] });
+    },
+  });
+};
+
+export const useClaimCase = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId }) => claimCase(caseId),
+    onSuccess: (_, { caseId }) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] });
+      qc.invalidateQueries({ queryKey: ['admin', 'cases'] });
+    },
+  });
+};
+
+export const useVerifyItems = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, payload }) => verifyItems(caseId, payload),
+    onSuccess: (_, { caseId }) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] });
+      qc.invalidateQueries({ queryKey: ['admin', 'cases'] });
+    },
+  });
+};
+
+export const useRequestAdditionalDocs = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, payload }) => requestAdditionalDocs(caseId, payload),
+    onSuccess: (_, { caseId }) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] });
+      qc.invalidateQueries({ queryKey: ['admin', 'cases'] });
+    },
+  });
+};
+
+// ── External Participants ─────────────────────────────────────────────────
+
+export const useParticipants = (caseId) =>
+  useQuery({
+    queryKey: ['admin', 'case-participants', caseId],
+    queryFn: () => listParticipants(caseId),
+    enabled: !!caseId,
+    staleTime: 30_000,
+  });
+
+export const useAddParticipant = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, payload }) => addParticipant(caseId, payload),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case-participants', caseId] }),
+  });
+};
+
+export const useRemoveParticipant = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, participantId }) => removeParticipant(caseId, participantId),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case-participants', caseId] }),
+  });
+};
+
+export const useShareDocuments = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ caseId, payload }) => shareDocumentsWithParticipant(caseId, payload),
+    onSuccess: (_, { caseId }) => qc.invalidateQueries({ queryKey: ['admin', 'case-participants', caseId] }),
+  });
+};
+
+// ── Email Templates ────────────────────────────────────────────────────────
+export const useEmailTemplates = () =>
+  useQuery({
+    queryKey: ['admin', 'email-templates'],
+    queryFn: getEmailTemplates,
+    staleTime: 5 * 60_000,
+  });
+
+export const useEmailTemplate = (id) =>
+  useQuery({
+    queryKey: ['admin', 'email-template', id],
+    queryFn: () => getEmailTemplate(id),
+    enabled: !!id,
+  });
+
+export const useUpdateEmailTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }) => updateEmailTemplate(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'email-templates'] }),
   });
 };

@@ -384,7 +384,7 @@ export default function BackofficeQueuePage() {
   const [tab, setTab] = useState('unassigned') // unassigned | mine | all
   const [modal, setModal] = useState(null) // { action, task }
 
-  const isAdmin = user?.roles?.includes('ECM_ADMIN')
+  const isAdmin = user?.roles?.some(r => r === 'ECM_ADMIN' || r === 'ECM_SUPER_ADMIN')
   const currentUserSubject = user?.entraObjectId || user?.email || ''
 
   // For 'mine' tab, fetch assigned-to-me; for others, fetch the full queue
@@ -463,9 +463,9 @@ export default function BackofficeQueuePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Backoffice Queue</h1>
+          <h1 className="text-xl font-bold text-gray-900">Review Queue</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Document review tasks for your team
+            Tasks assigned to you and your group
           </p>
         </div>
         <button

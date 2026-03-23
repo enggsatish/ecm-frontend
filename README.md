@@ -86,7 +86,7 @@ ecm-frontend/
     │   ├── apiClient.js        ← Axios instance + JWT interceptor + 401 handler
     │   ├── authApi.js          ← getMe(), ping(), logout()
     │   ├── documentsApi.js     ← upload(), list(), get(), download(), delete()
-    │   ├── workflowApi.js      ← instances, tasks, definitions, groups, templates
+    │   ├── workflowApi.js      ← instances, tasks, definitions, groups, templates, clone
     │   ├── eformsApi.js        ← definitions, submissions, render, designer CRUD
     │   ├── adminApi.js         ← users, departments, categories, products, config
     │   └── searchApi.js        ← full-text search
@@ -100,7 +100,9 @@ ecm-frontend/
     │
     ├── store/                  ← Client-only state (Zustand)
     │   ├── userStore.js        ← Default export: user, roles, hasRole(), hasAnyRole()
-    │   └── eformsStore.js      ← Named export: live form schema being designed
+    │   ├── eformsStore.js      ← Named export: live form schema being designed
+    │   ├── tenantStore.js      ← Tenant branding config (name, logo, colour)
+    │   └── uiStore.js          ← UI state: sidebar collapsed
     │
     ├── components/
     │   ├── common/
@@ -159,7 +161,9 @@ ecm-frontend/
     │       ├── TenantSettingsPage.jsx
     │       ├── CustomerManagementPage.jsx
     │       ├── AuditLogPage.jsx
-    │       └── NotificationPreferencesPage.jsx  ← ⚠️ No backend yet
+    │       ├── NotificationPreferencesPage.jsx
+    │       ├── EmailTemplatesPage.jsx
+    │       └── CustomerPortfolioPage.jsx
     │
     └── utils/
         ├── oktaConfig.js       ← OktaAuth singleton instance
@@ -563,7 +567,16 @@ Create and manage workflow definition configs (name, process key, assigned role,
 **Path:** `/workflow/designer`
 **Access:** `ECM_ADMIN`, `ECM_DESIGNER`
 
-Form-based workflow template DSL editor. Define steps, conditions, and SLA settings. On publish, the backend compiles DSL → BPMN and deploys to Flowable.
+Visual BPMN 2.0 workflow designer using bpmn-js. Features:
+- **Template list** grouped by status: Published, Drafts, Deprecated
+- **New Template** modal → creates a DRAFT with starter BPMN (Start → Review → Decision → End)
+- **Full-screen editor** with bpmn-js canvas, ECM palette (left), and properties panel (right)
+- **Clone**: Any Published or Deprecated template can be cloned into a new DRAFT via "Clone as Draft" button
+- **Read-only mode**: Opening a Published or Deprecated template shows the designer in view-only mode (Save button hidden, "Read-only — clone to edit" banner)
+- **Publish**: DRAFT → Published deploys BPMN XML to Flowable engine
+- **Deprecate**: Published → Deprecated (prevents new instances, running instances unaffected)
+
+On publish, the backend post-processes the BPMN XML to inject `taskCreatedListener` (notification events) and `processEndListener` (status updates) if missing.
 
 ---
 
@@ -629,6 +642,9 @@ The full low-code form builder. See [eForm Designer Deep Dive](#eform-designer-d
 | `/admin/retention` | `RetentionPage` | Retention policies: archive/purge thresholds |
 | `/admin/settings` | `TenantSettingsPage` | Tenant branding: name, logo, brand colour, timezone |
 | `/admin/audit` | `AuditLogPage` | Searchable, filterable audit event log |
+| `/admin/notifications` | `NotificationPreferencesPage` | User notification preferences (IN_APP / EMAIL per category) |
+| `/admin/email-templates` | `EmailTemplatesPage` | Email template editor (HTML subject + body) |
+| `/admin/customer-portfolio` | `CustomerPortfolioPage` | Customer portfolio and enrollments |
 
 Default redirect: `/admin` → `/admin/users`
 
@@ -760,6 +776,7 @@ The same rules are also evaluated server-side (`RuleEngineService.java`) before 
 **`Header.jsx`**
 - Resolves page title from current pathname using longest-prefix `PAGE_META` matching
 - Handles dynamic segments: `/admin/users/123` → title "User Management"
+- **Notification bell**: Polls `GET /api/notifications/count` every 30s. Badge shows unread count (99+ cap). Dropdown lists recent notifications with mark-as-read. Clicking a notification navigates to its `link` (e.g., `/backoffice/queue`)
 
 ### Common Components
 
@@ -838,10 +855,8 @@ Then add `VITE_API_URL=https://api.your-domain.com` to `.env.production`.
 
 ### 🟡 Medium Priority
 
-**`NotificationPreferencesPage` calls non-existent backend**
-The page makes GET/PUT calls to `/api/notifications/**`. The `ecm-notification` module is not implemented. These calls return 404. The page renders a loading spinner indefinitely.
-
-*Fix:* Add a feature flag or backend detection before rendering the page. Or implement the module.
+**~~`NotificationPreferencesPage` calls non-existent backend~~ — FIXED**
+The `ecm-notification` module is now fully implemented (port 8088). Notification preferences (IN_APP / EMAIL per category), email templates, and in-app notification bell are all working.
 
 **Global `staleTime: 5 * 60 * 1000` is too long for volatile data**
 Workflow task inbox data can change within seconds (another reviewer completing a task). The global 5-minute stale time means users may see stale task lists.

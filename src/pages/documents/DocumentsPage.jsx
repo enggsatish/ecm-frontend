@@ -9,13 +9,52 @@
  * Accepts ?customer=EXTERNAL_ID query param to pre-filter by customer.
  */
 import { useState } from 'react'
-import { Upload, X, Search } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { Upload, X, Search, ExternalLink } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { listCustomers } from '../../api/adminApi'
 import ErrorBoundary from '../../components/common/ErrorBoundary'
 import DocumentUpload from '../../components/documents/DocumentUpload'
 import DocumentTable from '../../components/documents/DocumentTable'
 import DocumentSearchPanel from '../../components/documents/DocumentSearchPanel'
+
+function CustomerFilterBanner({ externalId, onClear }) {
+  const navigate = useNavigate()
+  const { data, isLoading } = useQuery({
+    queryKey: ['customer-by-ref', externalId],
+    queryFn: () => listCustomers({ q: externalId, size: 5 }),
+    staleTime: 10 * 60_000,
+    enabled: !!externalId,
+    throwOnError: false,
+  })
+  // API returns Page<PartyDto> → unwrap gives {content: [...]} or just [...]
+  const customers = Array.isArray(data) ? data : (data?.content ?? [])
+  const customer = customers.find(c => c.customerRef === externalId)
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 rounded-lg border border-indigo-100">
+      <div className="flex-1 flex items-center gap-2">
+        <span className="text-sm text-indigo-800">Showing documents for:</span>
+        {isLoading ? (
+          <span className="text-sm text-indigo-600">Loading...</span>
+        ) : customer ? (
+          <button onClick={() => navigate(`/customers/${customer.id}/portfolio`, { state: { from: '/documents', fromLabel: 'Documents' } })}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-sm font-semibold text-indigo-700 transition-colors cursor-pointer">
+            {customer.displayName}
+            <span className="font-mono text-xs text-indigo-500">({externalId})</span>
+            <ExternalLink size={12} className="text-indigo-400" />
+          </button>
+        ) : (
+          <span className="text-sm font-mono font-bold text-indigo-800">{externalId}</span>
+        )}
+      </div>
+      <button onClick={onClear}
+        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+        <X size={14} /> Clear filter
+      </button>
+    </div>
+  )
+}
 
 export default function DocumentsPage() {
   const [showUpload, setShowUpload] = useState(false)
@@ -85,15 +124,7 @@ export default function DocumentsPage() {
 
       {/* ── Customer filter banner ──────────────────────────── */}
       {customerFilter && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50 rounded-lg border border-indigo-100">
-          <span className="text-sm text-indigo-800 font-medium">
-            Showing documents for customer: <span className="font-mono font-bold">{customerFilter}</span>
-          </span>
-          <button onClick={handleClearCustomer}
-            className="ml-auto text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
-            <X size={14} /> Clear filter
-          </button>
-        </div>
+        <CustomerFilterBanner externalId={customerFilter} onClear={handleClearCustomer} />
       )}
 
       {/* ── Search mode ───────────────────────────────────────── */}

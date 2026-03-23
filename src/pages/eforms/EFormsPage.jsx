@@ -4,8 +4,9 @@
  * Hub page — shows published forms for filling + quick navigation to
  * designer list (admin/designer) and submissions.
  */
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PenLine, FileCheck, ClipboardList, Eye, ArrowRight, Loader2 } from 'lucide-react';
+import { PenLine, FileCheck, ClipboardList, Eye, ArrowRight, Loader2, Search } from 'lucide-react';
 import { usePublishedForms } from '../../hooks/useEForms';
 import useUserStore from '../../store/userStore';
 
@@ -42,8 +43,9 @@ export default function EFormsPage() {
   const navigate = useNavigate();
   const { user }  = useUserStore();
   const { data: rawForms, isLoading } = usePublishedForms();
+  const [search, setSearch] = useState('');
+  const [selectedTag, setSelectedTag] = useState(null);
 
-  // Guard: hooks return T[] but add Array.isArray safety for any edge case
   const publishedForms = Array.isArray(rawForms) ? rawForms : [];
 
   // Determine role-based quick actions
@@ -56,16 +58,29 @@ export default function EFormsPage() {
     }
   }
 
+  const allTags = [...new Set(publishedForms.flatMap(f => f.tags || []))].sort();
+
+  const filtered = publishedForms
+    .filter(f => !selectedTag || (f.tags && f.tags.includes(selectedTag)))
+    .filter(f => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return f.name?.toLowerCase().includes(q)
+        || f.formKey?.toLowerCase().includes(q)
+        || f.description?.toLowerCase().includes(q)
+        || (f.tags || []).some(tag => tag.toLowerCase().includes(q));
+    });
+
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto space-y-5">
       {/* Header */}
-      <div className="mb-6">
+      <div>
         <h1 className="text-xl font-bold text-gray-900">eForms</h1>
         <p className="text-sm text-gray-500 mt-0.5">Digital forms for applications, consents, and disclosures</p>
       </div>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {quickActions.map(({ label, desc, icon: Icon, to, color }) => (
           <button
             key={to}
@@ -85,65 +100,116 @@ export default function EFormsPage() {
         ))}
       </div>
 
-      {/* Available Forms */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-800">Available Forms</h2>
-          <span className="text-xs text-gray-400">{publishedForms.length} published</span>
+      {/* Available Forms — header + search */}
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-sm font-semibold text-gray-800">
+          Available Forms
+          <span className="ml-2 text-xs font-normal text-gray-400">{filtered.length} of {publishedForms.length}</span>
+        </h2>
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search forms..."
+            className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
+          />
         </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-          </div>
-        ) : publishedForms.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 py-12 flex flex-col items-center">
-            <span className="text-3xl mb-3">📋</span>
-            <p className="text-sm text-gray-500">No published forms available</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {publishedForms.map((form) => (
-              <FormCard
-                key={form.formKey || form.id}
-                form={form}
-                onFill={() => navigate(`/eforms/fill/${form.formKey}`)}
-              />
-            ))}
-          </div>
-        )}
       </div>
-    </div>
-  );
-}
 
-function FormCard({ form, onFill }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all overflow-hidden">
-      {/* Top accent */}
-      <div className="h-1 bg-gradient-to-r from-indigo-500 to-indigo-400" />
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-            <PenLine className="w-4 h-4 text-indigo-600" />
-          </div>
-          <span className="text-xs font-mono text-gray-400 mt-1">{form.formKey}</span>
+      {/* Tag filter chips */}
+      {allTags.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-400 font-medium">Tags:</span>
+          <button onClick={() => setSelectedTag(null)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors
+              ${!selectedTag ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            All
+          </button>
+          {allTags.map((tag) => (
+            <button key={tag} onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors
+                ${selectedTag === tag ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {tag}
+            </button>
+          ))}
         </div>
+      )}
 
-        <h3 className="text-sm font-semibold text-gray-800 mb-1 line-clamp-1">{form.name}</h3>
-        {form.description && (
-          <p className="text-xs text-gray-500 line-clamp-2 mb-3">{form.description}</p>
-        )}
+      {/* Loading */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+        </div>
+      )}
 
-        <button
-          onClick={onFill}
-          className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium
-                     text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50
-                     hover:border-indigo-400 transition-colors"
-        >
-          <Eye className="w-3.5 h-3.5" /> Fill Form
-        </button>
-      </div>
+      {/* Empty state */}
+      {!isLoading && publishedForms.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 py-12 flex flex-col items-center">
+          <span className="text-3xl mb-3">📋</span>
+          <p className="text-sm text-gray-500">No published forms available</p>
+        </div>
+      )}
+
+      {/* No results */}
+      {!isLoading && publishedForms.length > 0 && filtered.length === 0 && (
+        <div className="py-12 text-center text-gray-400 text-sm">
+          No forms match your search.
+        </div>
+      )}
+
+      {/* Table */}
+      {!isLoading && filtered.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-left">
+                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Form</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Key</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Tags</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-28"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map((form) => (
+                <tr key={form.formKey || form.id}
+                  className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  onDoubleClick={() => navigate(`/eforms/fill/${form.formKey}`)}>
+                  <td className="px-4 py-3">
+                    <div>
+                      <span className="font-medium text-gray-900">{form.name}</span>
+                      {form.description && (
+                        <p className="text-xs text-gray-400 mt-0.5 truncate max-w-sm">{form.description}</p>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 hidden md:table-cell">
+                    <span className="font-mono text-xs text-gray-500">{form.formKey}</span>
+                  </td>
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    <div className="flex flex-wrap gap-1">
+                      {(form.tags || []).map((tag) => (
+                        <span key={tag}
+                          onClick={(e) => { e.stopPropagation(); setSelectedTag(selectedTag === tag ? null : tag); }}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 hover:bg-indigo-100 hover:text-indigo-700 cursor-pointer">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/eforms/fill/${form.formKey}`); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                      <Eye className="w-3.5 h-3.5" /> Fill Form
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

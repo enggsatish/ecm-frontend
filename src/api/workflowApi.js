@@ -118,6 +118,15 @@ export const publishTemplate = (id) =>
 export const deprecateTemplate = (id) =>
   apiClient.post(`/api/workflow/templates/${id}/deprecate`).then(unwrap)
 
+export const cloneTemplate = (id) =>
+  apiClient.post(`/api/workflow/templates/${id}/clone`).then(unwrap)
+
+export const updateTemplateMeta = (id, { name, processKey }) =>
+  apiClient.patch(`/api/workflow/templates/${id}/meta`, { name, processKey }).then(unwrap)
+
+export const deleteTemplate = (id) =>
+  apiClient.delete(`/api/workflow/templates/${id}`).then(unwrap)
+
 export const getTemplateMappings = (id) =>
   apiClient.get(`/api/workflow/templates/${id}/mappings`).then(unwrap)
 

@@ -19,7 +19,9 @@ import {
   FileText, Download, Trash2, Search, RefreshCw, Eye,
   ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle, Loader2,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { listDocuments, downloadDocument, deleteDocument } from '../../api/documentsApi'
+import { listCustomers } from '../../api/adminApi'
 import DocumentViewerModal from './DocumentViewerModal'
 import toast from 'react-hot-toast'
 
@@ -120,6 +122,34 @@ function SortButton({ field, label, sort, onSort }) {
   )
 }
 
+function CustomerLink({ externalId }) {
+  const navigate = useNavigate()
+  const { data } = useQuery({
+    queryKey: ['customer-by-ref', externalId],
+    queryFn: () => listCustomers({ q: externalId, size: 1 }),
+    staleTime: 10 * 60_000,
+    enabled: !!externalId,
+  })
+  const customers = Array.isArray(data) ? data : (data?.content ?? [])
+  const customer = customers.find(c => c.customerRef === externalId || c.externalId === externalId)
+
+  if (customer) {
+    return (
+      <button onClick={() => navigate(`/customers/${customer.id}/portfolio`, { state: { from: '/documents', fromLabel: 'Documents' } })}
+        className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full hover:bg-indigo-100 transition-colors cursor-pointer"
+        title={`View portfolio: ${customer.displayName}`}>
+        {customer.displayName ?? externalId}
+      </button>
+    )
+  }
+
+  return (
+    <span className="text-[10px] font-medium text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full">
+      {externalId}
+    </span>
+  )
+}
+
 function DeleteButton({ doc, onDelete }) {
   const [confirm, setConfirm] = useState(false)
   if (confirm) {
@@ -153,7 +183,7 @@ function DeleteButton({ doc, onDelete }) {
 // ── Main component ────────────────────────────────────────────
 
 // Column count: Name | Size | Uploaded By | Date | Status | Location | OCR | Actions = 8
-const COL_SPAN = 8
+const COL_SPAN = 9
 const PAGE_SIZE = 20
 
 export default function DocumentTable({ customerFilter = '' }) {
@@ -336,6 +366,15 @@ export default function DocumentTable({ customerFilter = '' }) {
             )}
           </td>
 
+          {/* Customer (clickable → portfolio) */}
+          <td className="py-3 px-4">
+            {doc.partyExternalId ? (
+              <CustomerLink externalId={doc.partyExternalId} />
+            ) : (
+              <span className="text-xs text-gray-300">—</span>
+            )}
+          </td>
+
           {/* Location breadcrumb (Sprint-C) */}
           <td className="py-3 px-4">
             {location ? (
@@ -464,6 +503,12 @@ export default function DocumentTable({ customerFilter = '' }) {
                   <span className="text-xs uppercase tracking-wide
                                    font-semibold text-gray-500">
                     Status
+                  </span>
+                </th>
+                <th className="py-3 px-4 text-left">
+                  <span className="text-xs uppercase tracking-wide
+                                   font-semibold text-gray-500">
+                    Customer
                   </span>
                 </th>
                 {/* Sprint-C: hierarchy breadcrumb column */}

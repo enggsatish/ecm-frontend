@@ -3,7 +3,7 @@
  * Right panel shown when a field is selected in the designer.
  * Allows editing label, key, required, colSpan, placeholder, options, validation.
  */
-import { X, Plus, Trash2, GripVertical } from 'lucide-react';
+import { X, Plus, Trash2, GripVertical, CircleX } from 'lucide-react';
 import { useEFormsDesignerStore } from '../../../store/eformsStore';
 
 const COL_SPANS = [
@@ -19,13 +19,14 @@ const HAS_VALIDATION = ['TEXT_INPUT', 'TEXT_AREA', 'NUMBER', 'EMAIL', 'PHONE'];
 const HAS_PLACEHOLDER = ['TEXT_INPUT', 'TEXT_AREA', 'NUMBER', 'EMAIL', 'PHONE', 'DATE'];
 const DISPLAY_ONLY = ['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER'];
 
-export default function FieldConfigPanel() {
+export default function FieldConfigPanel({ style }) {
   const { getSelectedField, updateField, removeField, clearSelection } = useEFormsDesignerStore();
   const selected = getSelectedField();
 
   if (!selected) {
     return (
-      <aside className="w-64 flex-shrink-0 bg-gray-50 border-l border-gray-200 flex items-center justify-center p-6">
+      <aside className="flex-shrink-0 bg-gray-50 border-l border-gray-200 flex items-center justify-center p-6"
+             style={{ width: style?.width ?? 320 }}>
         <div className="text-center">
           <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-2">
             <span className="text-gray-400 text-lg">↑</span>
@@ -63,7 +64,8 @@ export default function FieldConfigPanel() {
   };
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+    <aside className="flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden"
+           style={{ width: style?.width ?? 320 }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <div>
@@ -161,13 +163,13 @@ export default function FieldConfigPanel() {
           <Field label="Options">
             <div className="space-y-1.5">
               {(field.options || []).map((opt, idx) => (
-                <div key={idx} className="flex items-center gap-1">
-                  <GripVertical className="w-3 h-3 text-gray-300 flex-shrink-0" />
+                <div key={idx} className="flex items-center gap-1.5">
+                  <GripVertical className="w-3 h-3 text-gray-300 flex-shrink-0 cursor-grab" />
                   <input
                     type="text"
                     value={opt.label}
                     onChange={(e) => updateOption(idx, { label: e.target.value })}
-                    className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-400"
+                    className="flex-1 min-w-0 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-400"
                     placeholder="Label"
                   />
                   <input
@@ -179,15 +181,18 @@ export default function FieldConfigPanel() {
                   />
                   <button
                     onClick={() => removeOption(idx)}
-                    className="text-gray-300 hover:text-red-400 flex-shrink-0"
+                    className="flex-shrink-0 cursor-pointer p-1 rounded
+                               text-red-400 hover:text-red-600 hover:bg-red-50
+                               transition-colors"
+                    title="Remove option"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
               ))}
               <button
                 onClick={addOption}
-                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 mt-1"
+                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 mt-1 cursor-pointer"
               >
                 <Plus className="w-3 h-3" /> Add option
               </button>

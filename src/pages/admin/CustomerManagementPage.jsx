@@ -9,6 +9,7 @@
  *   - Primary product dropdown from /api/admin/products
  */
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Search, User, Building2, Briefcase,
@@ -321,9 +322,9 @@ function CustomerDetailPanel({ customer, onClose, onEdit }) {
 
 export default function CustomerManagementPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
-  const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [page, setPage] = useState(0)
 
   const { data: pageData, isLoading, isError, refetch } = useQuery({
@@ -428,7 +429,7 @@ export default function CustomerManagementPage() {
             </thead>
             <tbody>
               {customers.map(c => (
-                <tr key={c.id} onClick={() => setSelectedCustomer(c)}
+                <tr key={c.id} onClick={() => navigate(`/customers/${c.id}/portfolio`, { state: { from: '/admin/customers', fromLabel: 'Customers' } })}
                   className="border-b border-gray-50 hover:bg-blue-50/50 cursor-pointer transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-900 text-sm">
                     {c.displayName}
@@ -439,7 +440,7 @@ export default function CustomerManagementPage() {
                   <td className="px-4 py-3 text-sm text-gray-500">{c.registrationNo || '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => setSelectedCustomer(c)} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+                      <button onClick={() => navigate(`/customers/${c.id}/portfolio`, { state: { from: '/admin/customers', fromLabel: 'Customers' } })} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
                         <ChevronRight size={13} /> Details
                       </button>
                       <button onClick={() => setModal(c)} className="text-gray-400 hover:text-blue-600"><Edit2 size={15} /></button>
@@ -474,14 +475,6 @@ export default function CustomerManagementPage() {
         />
       )}
 
-      {/* Detail panel with enrollments */}
-      {selectedCustomer && (
-        <CustomerDetailPanel
-          customer={selectedCustomer}
-          onClose={() => setSelectedCustomer(null)}
-          onEdit={(c) => { setSelectedCustomer(null); setModal(c) }}
-        />
-      )}
     </div>
   )
 }
