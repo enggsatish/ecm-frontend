@@ -105,6 +105,10 @@ export const deactivateRetentionPolicy = (id) =>
 export const getTenantConfig = () =>
   api.get('/api/admin/config').then(unwrap);
 
+/** Branding-only config — accessible by any authenticated user (not admin-restricted) */
+export const getTenantBranding = () =>
+  api.get('/api/admin/config/branding').then(unwrap);
+
 export const updateConfigKey = (key, payload) =>
   api.put(`/api/admin/config/${key}`, payload).then(unwrap);
 
@@ -171,6 +175,16 @@ export const listExternalUploads = (caseId) =>
 
 export const removeEnrollment = (customerId, enrollmentId) =>
   api.delete(`/api/admin/customers/${customerId}/enrollments/${enrollmentId}`).then(unwrap);
+
+// ── AI Gateway Integration Config ──────────────────────────────────────────
+// HMAC secret is write-only — GET never returns the plaintext value, only a
+// `hmacSecretConfigured` flag, masked preview (last 4 chars), and updated-at.
+// To update the URL without touching the secret, send `hmacSecret: null`.
+export const getAiGatewayIntegration = () =>
+  api.get('/api/admin/integrations/ai-gateway').then(unwrap);
+
+export const saveAiGatewayIntegration = (payload) =>
+  api.put('/api/admin/integrations/ai-gateway', payload).then(unwrap);
 
 // ── DocuSign Integration Config ────────────────────────────────────────────
 export const getDocuSignConfig = () =>
@@ -252,6 +266,9 @@ export const linkCaseDocument = (caseId, payload) =>
 export const waiveCaseItem = (caseId, itemId, payload) =>
   api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/waive`, payload).then(unwrap);
 
+export const sendForSignature = (caseId, itemId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/send-for-signature`, payload).then(unwrap);
+
 export const addCaseNote = (caseId, payload) =>
   api.post(`/api/admin/cases/${caseId}/notes`, payload).then(unwrap);
 
@@ -263,6 +280,15 @@ export const deleteCase = (caseId) =>
 
 export const startChecklistWorkflow = (caseId, itemId) =>
   api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/start-workflow`).then(unwrap);
+
+export const addChecklistItem = (caseId, payload) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/add`, payload).then(unwrap);
+
+export const completeChecklistItem = (caseId, itemId) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/complete`).then(unwrap);
+
+export const reopenChecklistItem = (caseId, itemId) =>
+  api.post(`/api/admin/cases/${caseId}/checklist/${itemId}/reopen`).then(unwrap);
 
 export const getCaseTimeline = (caseId) =>
   api.get(`/api/admin/cases/${caseId}/timeline`).then(unwrap);
@@ -365,23 +391,6 @@ export const getEmailTemplate = (id) =>
 export const updateEmailTemplate = (id, payload) =>
   api.put(`/api/notifications/email-templates/${id}`, payload).then(unwrap);
 
-// ── OCR Templates ─────────────────────────────────────────────────────────
-
-export const getOcrTemplates = () =>
-  api.get('/api/admin/ocr-templates').then(unwrap);
-
-export const getOcrTemplate = (id) =>
-  api.get(`/api/admin/ocr-templates/${id}`).then(unwrap);
-
-export const createOcrTemplate = (payload) =>
-  api.post('/api/admin/ocr-templates', payload).then(unwrap);
-
-export const updateOcrTemplate = (id, payload) =>
-  api.put(`/api/admin/ocr-templates/${id}`, payload).then(unwrap);
-
-export const deleteOcrTemplate = (id) =>
-  api.delete(`/api/admin/ocr-templates/${id}`).then(unwrap);
-
 /** GET /api/admin/permissions — list all 24 permissions grouped by module */
 export const getPermissions = () =>
   api.get('/api/admin/permissions').then(unwrap);
@@ -389,3 +398,39 @@ export const getPermissions = () =>
 /** GET /api/admin/bundles — list all capability bundles with permissions */
 export const getBundles = () =>
   api.get('/api/admin/bundles').then(unwrap);
+
+// ── OCR Pipeline Configuration ───────────────────────────────────────────
+
+// Field Mappings (Phase 1)
+export const getFieldMappings = (categoryCode) =>
+  api.get('/api/admin/ocr-pipeline/field-mappings', { params: categoryCode ? { categoryCode } : {} }).then(unwrap);
+export const createFieldMapping = (payload) =>
+  api.post('/api/admin/ocr-pipeline/field-mappings', payload).then(unwrap);
+export const updateFieldMapping = (id, payload) =>
+  api.put(`/api/admin/ocr-pipeline/field-mappings/${id}`, payload).then(unwrap);
+export const deleteFieldMapping = (id) =>
+  api.delete(`/api/admin/ocr-pipeline/field-mappings/${id}`).then(unwrap);
+
+// Extraction Templates (Phase 3)
+export const getExtractionTemplates = (categoryCode) =>
+  api.get('/api/admin/ocr-pipeline/extraction-templates', { params: categoryCode ? { categoryCode } : {} }).then(unwrap);
+export const createExtractionTemplate = (payload) =>
+  api.post('/api/admin/ocr-pipeline/extraction-templates', payload).then(unwrap);
+export const updateExtractionTemplate = (id, payload) =>
+  api.put(`/api/admin/ocr-pipeline/extraction-templates/${id}`, payload).then(unwrap);
+export const deleteExtractionTemplate = (id) =>
+  api.delete(`/api/admin/ocr-pipeline/extraction-templates/${id}`).then(unwrap);
+
+// Confidence Config (Phase 2)
+export const getConfidenceConfigs = () =>
+  api.get('/api/admin/ocr-pipeline/confidence-config').then(unwrap);
+export const updateConfidenceConfig = (categoryCode, payload) =>
+  api.put(`/api/admin/ocr-pipeline/confidence-config/${categoryCode}`, payload).then(unwrap);
+
+// Training Examples (Phase 4)
+export const getTrainingExamples = (params) =>
+  api.get('/api/admin/ocr-pipeline/training-examples', { params }).then(unwrap);
+export const updateTrainingExampleStatus = (id, status) =>
+  api.put(`/api/admin/ocr-pipeline/training-examples/${id}/status`, { status }).then(unwrap);
+export const deleteTrainingExample = (id) =>
+  api.delete(`/api/admin/ocr-pipeline/training-examples/${id}`).then(unwrap);
