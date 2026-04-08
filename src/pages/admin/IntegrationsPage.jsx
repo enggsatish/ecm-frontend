@@ -6,7 +6,7 @@
  *   [DocuSign]  [OCR Engine]  [future...]
  */
 import { useState, useEffect, lazy, Suspense } from 'react'
-import { Link2, Scan, Bot, Loader2, Save, Cloud, Key, Info, TestTube2, CheckCircle2, XCircle, Eye, EyeOff, ShieldCheck, ShieldAlert } from 'lucide-react'
+import { Link2, Scan, Bot, Loader2, Save, Cloud, Key, Info, TestTube2, CheckCircle2, XCircle, Eye, EyeOff, ShieldCheck, ShieldAlert, Globe, UserCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getTenantConfig, bulkUpdateConfig, getAiGatewayIntegration, saveAiGatewayIntegration } from '../../api/adminApi'
@@ -226,21 +226,37 @@ function AiGatewayTab() {
     staleTime: 60_000,
   })
 
-  const [url, setUrl]             = useState('')
-  const [secret, setSecret]       = useState('')       // plaintext only when user is actively editing
-  const [showSecret, setShowSecret] = useState(false)
-  const [editingSecret, setEditingSecret] = useState(false)
-  const [dirty, setDirty]         = useState(false)
+  // Non-sensitive fields — direct state
+  const [url, setUrl]                   = useState('')
+  const [baseUrl, setBaseUrl]           = useState('')
+  const [oktaClientId, setOktaClientId] = useState('')
+  const [route, setRoute]               = useState('direct')
 
-  // Reset form when server data loads or refreshes. Using the "adjust state during render"
-  // pattern (React 19 recommended) instead of useEffect+setState, which triggers the
-  // react-hooks/set-state-in-effect rule.
+  // HMAC secret (write-only)
+  const [hmacSecret, setHmacSecret]             = useState('')
+  const [showHmacSecret, setShowHmacSecret]     = useState(false)
+  const [editingHmacSecret, setEditingHmacSecret] = useState(false)
+
+  // Okta client secret (write-only)
+  const [oktaSecret, setOktaSecret]         = useState('')
+  const [showOktaSecret, setShowOktaSecret] = useState(false)
+  const [editingOktaSecret, setEditingOktaSecret] = useState(false)
+
+  const [dirty, setDirty] = useState(false)
+
+  // Reset form when server data loads or refreshes. Using "adjust state during render"
+  // pattern (React 19 recommended) instead of useEffect+setState.
   const [prevData, setPrevData] = useState(null)
   if (data !== prevData) {
     setPrevData(data)
     setUrl(data?.url || '')
-    setSecret('')
-    setEditingSecret(false)
+    setBaseUrl(data?.baseUrl || '')
+    setOktaClientId(data?.oktaClientId || '')
+    setRoute(data?.route || 'direct')
+    setHmacSecret('')
+    setEditingHmacSecret(false)
+    setOktaSecret('')
+    setEditingOktaSecret(false)
     setDirty(false)
   }
 
@@ -249,9 +265,12 @@ function AiGatewayTab() {
     onSuccess: () => {
       toast.success('AI Gateway integration saved')
       qc.invalidateQueries({ queryKey: ['admin', 'integrations', 'ai-gateway'] })
-      setSecret('')
-      setEditingSecret(false)
-      setShowSecret(false)
+      setHmacSecret('')
+      setEditingHmacSecret(false)
+      setShowHmacSecret(false)
+      setOktaSecret('')
+      setEditingOktaSecret(false)
+      setShowOktaSecret(false)
       setDirty(false)
     },
     onError: () => toast.error('Failed to save AI Gateway integration'),
@@ -259,28 +278,65 @@ function AiGatewayTab() {
 
   const handleSave = () => {
     const payload = {}
-    if (url !== (data?.url || '')) payload.url = url
-    if (editingSecret && secret.trim()) payload.hmacSecret = secret.trim()
+    if (url !== (data?.url || ''))                     payload.url = url
+    if (baseUrl !== (data?.baseUrl || ''))             payload.baseUrl = baseUrl
+    if (oktaClientId !== (data?.oktaClientId || ''))   payload.oktaClientId = oktaClientId
+    if (route !== (data?.route || 'direct'))           payload.route = route
+    if (editingHmacSecret && hmacSecret.trim())        payload.hmacSecret = hmacSecret.trim()
+    if (editingOktaSecret && oktaSecret.trim())        payload.oktaClientSecret = oktaSecret.trim()
+
     if (Object.keys(payload).length === 0) {
       toast('Nothing to save', { icon: 'ℹ️' })
       return
     }
+
+    // Validation: switching to gateway mode requires base URL + Okta creds
+    if (route === 'gateway') {
+      const effectiveBaseUrl = (payload.baseUrl ?? (data && data.baseUrl) ?? '').toString().trim()
+      const effectiveClientId = (payload.oktaClientId ?? (data && data.oktaClientId) ?? '').toString().trim()
+      const hasSecret = (data && data.oktaClientSecretConfigured) || (editingOktaSecret && oktaSecret.trim())
+      if (!effectiveBaseUrl || !effectiveClientId || !hasSecret) {
+        toast.error('Gateway mode requires Base URL, Okta Client ID, and Okta Client Secret')
+        return
+      }
+    }
+
     saveMut.mutate(payload)
   }
 
-  const handleStartRotate = () => {
-    setEditingSecret(true)
-    setSecret('')
-    setShowSecret(false)
+  const handleStartHmacRotate = () => {
+    setEditingHmacSecret(true)
+    setHmacSecret('')
+    setShowHmacSecret(false)
     setDirty(true)
   }
+  const handleCancelHmacRotate = () => {
+    setEditingHmacSecret(false)
+    setHmacSecret('')
+    setShowHmacSecret(false)
+    recomputeDirty()
+  }
 
-  const handleCancelRotate = () => {
-    setEditingSecret(false)
-    setSecret('')
-    setShowSecret(false)
-    // Recompute dirty based on URL only
-    setDirty(url !== (data?.url || ''))
+  const handleStartOktaRotate = () => {
+    setEditingOktaSecret(true)
+    setOktaSecret('')
+    setShowOktaSecret(false)
+    setDirty(true)
+  }
+  const handleCancelOktaRotate = () => {
+    setEditingOktaSecret(false)
+    setOktaSecret('')
+    setShowOktaSecret(false)
+    recomputeDirty()
+  }
+
+  const recomputeDirty = () => {
+    setDirty(
+      url !== (data?.url || '') ||
+      baseUrl !== (data?.baseUrl || '') ||
+      oktaClientId !== (data?.oktaClientId || '') ||
+      route !== (data?.route || 'direct')
+    )
   }
 
   if (isLoading) {
@@ -289,11 +345,180 @@ function AiGatewayTab() {
     </div>
   }
 
-  const configured = data?.hmacSecretConfigured
+  const hmacConfigured = data?.hmacSecretConfigured
+  const oktaConfigured = data?.oktaClientSecretConfigured
 
   return (
     <div className="max-w-3xl space-y-6">
+
+      {/* ─── OCR Routing Mode ─── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-gray-100">
+              <Zap size={14} className="text-gray-500" />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium text-gray-800">OCR LLM Routing</label>
+              <p className="text-xs text-gray-400 mb-3">
+                Controls how ECM OCR's LLM calls are dispatched.
+                <strong> Direct</strong> sends them straight to Ollama.
+                <strong> Gateway</strong> routes through the AI Gateway for governance, quota enforcement, PII tagging, and usage tracking.
+              </p>
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => { setRoute('direct'); setDirty(true) }}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
+                    route === 'direct'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}>
+                  Direct Ollama
+                  <div className="text-xs font-normal text-gray-400 mt-0.5">Existing behavior — no governance</div>
+                </button>
+                <button type="button"
+                  onClick={() => { setRoute('gateway'); setDirty(true) }}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
+                    route === 'gateway'
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}>
+                  AI Gateway
+                  <div className="text-xs font-normal text-gray-400 mt-0.5">Via /api/invoke — full governance</div>
+                </button>
+              </div>
+              {route === 'gateway' && (!data?.baseUrl || !data?.oktaClientId || !data?.oktaClientSecretConfigured) && (
+                <div className="mt-3 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <ShieldAlert size={12} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    Gateway mode requires <strong>Base URL</strong>, <strong>Okta Client ID</strong>, and <strong>Okta Client Secret</strong> below.
+                    If any are missing, ECM OCR will fall back to direct Ollama automatically.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── AI Gateway Service Connection (for /api/invoke) ─── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Service Connection (OCR → /api/invoke)</h3>
+        </div>
+
+        {/* Base URL */}
+        <div className="px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-gray-100">
+              <Globe size={14} className="text-gray-500" />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium text-gray-800">Base URL</label>
+              <p className="text-xs text-gray-400 mb-2">
+                AI Gateway host, no path. ECM OCR will POST to <code className="font-mono">{'{baseUrl}/api/invoke'}</code>.
+              </p>
+              <input type="text" value={baseUrl}
+                onChange={e => { setBaseUrl(e.target.value); setDirty(true) }}
+                placeholder="http://localhost:8090"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            </div>
+          </div>
+        </div>
+
+        {/* Okta Client ID */}
+        <div className="px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-gray-100">
+              <UserCheck size={14} className="text-gray-500" />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium text-gray-800">Okta Client ID</label>
+              <p className="text-xs text-gray-400 mb-2">
+                API Services client_id. Paste the value from the AI Gateway Applications admin page
+                for the <code className="font-mono">ecm-ocr-pipeline</code> app, or from the Okta admin console.
+              </p>
+              <input type="text" value={oktaClientId}
+                onChange={e => { setOktaClientId(e.target.value); setDirty(true) }}
+                placeholder="0oa11q7ertmhbm1ml698"
+                autoComplete="off"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            </div>
+          </div>
+        </div>
+
+        {/* Okta Client Secret */}
+        <div className="px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-gray-100">
+              <Key size={14} className="text-gray-500" />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium text-gray-800">Okta Client Secret</label>
+              <p className="text-xs text-gray-400 mb-2">
+                API Services client_secret. Stored AES-GCM encrypted at rest in ECM.
+                Used by ECM OCR to obtain service JWTs for <code className="font-mono">/api/invoke</code>.
+              </p>
+
+              {!editingOktaSecret && (
+                <div className="flex items-center gap-3">
+                  {oktaConfigured ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
+                      <ShieldCheck size={12} />
+                      Configured
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                      <ShieldAlert size={12} />
+                      Not configured — service JWT unavailable
+                    </span>
+                  )}
+                  {data?.oktaClientSecretUpdatedAt && (
+                    <span className="text-xs text-gray-400">
+                      Updated {new Date(data.oktaClientSecretUpdatedAt).toLocaleString()}
+                    </span>
+                  )}
+                  <button type="button" onClick={handleStartOktaRotate}
+                    className="ml-auto px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+                    {oktaConfigured ? 'Rotate' : 'Set Secret'}
+                  </button>
+                </div>
+              )}
+
+              {editingOktaSecret && (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <input type={showOktaSecret ? 'text' : 'password'} value={oktaSecret}
+                      onChange={e => { setOktaSecret(e.target.value); setDirty(true) }}
+                      placeholder="Paste Okta client_secret"
+                      autoComplete="new-password"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                    <button type="button" onClick={() => setShowOktaSecret(s => !s)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600">
+                      {showOktaSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={handleCancelOktaRotate}
+                      className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800">
+                      Cancel
+                    </button>
+                    <span className="text-xs text-gray-400">
+                      Encrypted at rest. Never displayed after save.
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Webhook (RAG push) — existing from Change 2 ─── */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Webhook (OCR → RAG ingestion)</h3>
+        </div>
 
         {/* Webhook URL */}
         <div className="px-5 py-4">
@@ -321,13 +546,13 @@ function AiGatewayTab() {
             <div className="flex-1">
               <label className="text-sm font-medium text-gray-800">HMAC Secret</label>
               <p className="text-xs text-gray-400 mb-2">
-                Copy from the AI Gateway admin UI → <strong>Gateway Settings → Webhook → Rotate Secret</strong>, then paste here.
-                Used to sign outbound OCR webhook calls so the gateway can verify they came from ECM.
+                Copy from AI Gateway admin UI → <strong>Gateway Settings → Webhook → Rotate Secret</strong>.
+                Used to sign outbound OCR webhook calls.
               </p>
 
-              {!editingSecret && (
+              {!editingHmacSecret && (
                 <div className="flex items-center gap-3">
-                  {configured ? (
+                  {hmacConfigured ? (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
                       <ShieldCheck size={12} />
                       Configured · {data?.hmacSecretPreview || '••••'}
@@ -343,49 +568,48 @@ function AiGatewayTab() {
                       Updated {new Date(data.hmacSecretUpdatedAt).toLocaleString()}
                     </span>
                   )}
-                  <button type="button" onClick={handleStartRotate}
+                  <button type="button" onClick={handleStartHmacRotate}
                     className="ml-auto px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
-                    {configured ? 'Rotate' : 'Set Secret'}
+                    {hmacConfigured ? 'Rotate' : 'Set Secret'}
                   </button>
                 </div>
               )}
 
-              {editingSecret && (
+              {editingHmacSecret && (
                 <div className="space-y-2">
                   <div className="relative">
-                    <input type={showSecret ? 'text' : 'password'} value={secret}
-                      onChange={e => { setSecret(e.target.value); setDirty(true) }}
+                    <input type={showHmacSecret ? 'text' : 'password'} value={hmacSecret}
+                      onChange={e => { setHmacSecret(e.target.value); setDirty(true) }}
                       placeholder="Paste new HMAC secret (hex)"
                       autoComplete="new-password"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200" />
-                    <button type="button" onClick={() => setShowSecret(s => !s)}
+                    <button type="button" onClick={() => setShowHmacSecret(s => !s)}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600">
-                      {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                      {showHmacSecret ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={handleCancelRotate}
+                    <button type="button" onClick={handleCancelHmacRotate}
                       className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800">
                       Cancel
                     </button>
-                    <span className="text-xs text-gray-400">
-                      The secret is only sent to the server when you click Save — it's never displayed after that.
-                    </span>
                   </div>
                 </div>
               )}
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="px-5 py-3 bg-blue-50">
-          <div className="flex items-start gap-2 text-xs text-blue-700">
-            <Info size={12} className="flex-shrink-0 mt-0.5" />
-            <div>
-              <strong>Rotation workflow:</strong> Generate a new secret in the AI Gateway admin UI,
-              copy the hex value, paste it here, and save. ECM OCR picks up the new secret within 60 seconds.
-              During that window some webhook calls may be rejected — this is expected.
-            </div>
+      {/* ─── Info box ─── */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+        <div className="flex items-start gap-2 text-xs text-blue-700">
+          <Info size={12} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <strong>Routing cutover:</strong> flipping this switch to <strong>AI Gateway</strong> changes where ECM OCR's LLM calls land —
+            both llama-text (classify/extract from text) and glm-ocr (vision text extraction). ECM OCR picks up the change within 60 seconds.
+            Any gateway failure (auth, PII block, network) automatically falls back to direct Ollama for that document — no pipeline crashes.
+            Check ecm-ocr logs for <code className="font-mono">routed via AI Gateway</code> or <code className="font-mono">falling back to direct</code> messages.
           </div>
         </div>
       </div>
