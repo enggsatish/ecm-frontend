@@ -7,7 +7,7 @@ import {
   getProducts, getProduct, createProduct, updateProduct, deactivateProduct,
   addDocumentType, removeDocumentType, getWorkflowDefinitions,
   getRetentionPolicies, createRetentionPolicy, updateRetentionPolicy, deactivateRetentionPolicy,
-  getTenantConfig, updateConfigKey, bulkUpdateConfig, resetConfigToDefaults,
+  getTenantConfig, bulkUpdateConfig, resetConfigToDefaults,
   // Sprint-C
   getHierarchy, getSegments, createSegment, updateSegment,
   getProductLines, createProductLine, updateProductLine,
@@ -17,13 +17,16 @@ import {
   getRoles, getRole, createRole, updateRole, deleteRole,
   addPermissionToRole, removePermissionFromRole, applyBundleToRole,
   getPermissions, getBundles,
-  getOcrTemplates, getOcrTemplate, createOcrTemplate, updateOcrTemplate, deleteOcrTemplate,
   listCases, getCase, createCase, updateCaseStatus, linkCaseDocument, waiveCaseItem,
   startChecklistWorkflow, getCaseTimeline,
   requestOverride, listOverrideRequests, reviewOverrideRequest, adminBypassItem,
   assignCase, claimCase, verifyItems, requestAdditionalDocs,
   listParticipants, addParticipant, removeParticipant, shareDocumentsWithParticipant,
   getEmailTemplates, getEmailTemplate, updateEmailTemplate,
+  getFieldMappings, createFieldMapping, updateFieldMapping, deleteFieldMapping,
+  getExtractionTemplates, createExtractionTemplate, updateExtractionTemplate, deleteExtractionTemplate,
+  getConfidenceConfigs, updateConfidenceConfig,
+  getTrainingExamples, updateTrainingExampleStatus, deleteTrainingExample,
 } from '../api/adminApi';
 
 // ── Users ──────────────────────────────────────────────────────────────────
@@ -588,46 +591,6 @@ export const useBundles = () =>
     staleTime: 10 * 60_000,
   });
 
-// ── OCR Templates ─────────────────────────────────────────────────────────
-
-export const useOcrTemplates = () =>
-  useQuery({
-    queryKey: ['admin', 'ocr-templates'],
-    queryFn: getOcrTemplates,
-    staleTime: 60_000,
-  });
-
-export const useOcrTemplate = (id) =>
-  useQuery({
-    queryKey: ['admin', 'ocr-templates', id],
-    queryFn: () => getOcrTemplate(id),
-    enabled: !!id,
-  });
-
-export const useCreateOcrTemplate = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload) => createOcrTemplate(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'ocr-templates'] }),
-  });
-};
-
-export const useUpdateOcrTemplate = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }) => updateOcrTemplate(id, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'ocr-templates'] }),
-  });
-};
-
-export const useDeleteOcrTemplate = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id) => deleteOcrTemplate(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'ocr-templates'] }),
-  });
-};
-
 // ── Cases ─────────────────────────────────────────────────────────────────
 
 export const useCases = (params = {}) =>
@@ -834,4 +797,58 @@ export const useUpdateEmailTemplate = () => {
     mutationFn: ({ id, ...payload }) => updateEmailTemplate(id, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'email-templates'] }),
   });
+};
+
+// ── OCR Pipeline Configuration ───────────────────────────────────────────
+
+// Field Mappings
+export const useFieldMappings = (categoryCode) =>
+  useQuery({ queryKey: ['admin', 'field-mappings', categoryCode], queryFn: () => getFieldMappings(categoryCode), staleTime: 5 * 60_000 });
+export const useCreateFieldMapping = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: createFieldMapping, onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'field-mappings'] }) });
+};
+export const useUpdateFieldMapping = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: ({ id, ...payload }) => updateFieldMapping(id, payload), onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'field-mappings'] }) });
+};
+export const useDeleteFieldMapping = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: deleteFieldMapping, onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'field-mappings'] }) });
+};
+
+// Extraction Templates
+export const useExtractionTemplates = (categoryCode) =>
+  useQuery({ queryKey: ['admin', 'extraction-templates', categoryCode], queryFn: () => getExtractionTemplates(categoryCode), staleTime: 5 * 60_000 });
+export const useCreateExtractionTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: createExtractionTemplate, onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'extraction-templates'] }) });
+};
+export const useUpdateExtractionTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: ({ id, ...payload }) => updateExtractionTemplate(id, payload), onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'extraction-templates'] }) });
+};
+export const useDeleteExtractionTemplate = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: deleteExtractionTemplate, onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'extraction-templates'] }) });
+};
+
+// Confidence Config
+export const useConfidenceConfigs = () =>
+  useQuery({ queryKey: ['admin', 'confidence-config'], queryFn: getConfidenceConfigs, staleTime: 5 * 60_000 });
+export const useUpdateConfidenceConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: ({ categoryCode, ...payload }) => updateConfidenceConfig(categoryCode, payload), onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'confidence-config'] }) });
+};
+
+// Training Examples
+export const useTrainingExamples = (params) =>
+  useQuery({ queryKey: ['admin', 'training-examples', params], queryFn: () => getTrainingExamples(params), staleTime: 30_000 });
+export const useUpdateTrainingExampleStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: ({ id, status }) => updateTrainingExampleStatus(id, status), onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'training-examples'] }) });
+};
+export const useDeleteTrainingExample = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: deleteTrainingExample, onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'training-examples'] }) });
 };

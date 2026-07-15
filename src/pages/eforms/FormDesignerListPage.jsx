@@ -4,7 +4,7 @@
  * Lists all form definitions with tabs, search, tag filter, and row actions.
  * Role: ECM_ADMIN, ECM_DESIGNER
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Copy, Archive, Eye, Edit, Clock, MoreVertical, Trash2 } from 'lucide-react';
 import { useFormDefinitions, useCloneForm, useArchiveForm } from '../../hooks/useEForms';
@@ -38,6 +38,7 @@ function ActionMenu({ def, pos, onAction, onClose }) {
         className="fixed z-50 w-40 bg-white rounded-lg border border-gray-200 shadow-lg py-1"
         style={{ top: pos.top, right: pos.right }}
       >
+        {/* eslint-disable-next-line no-unused-vars */}
         {items.map(({ action, label, icon: Icon }) => (
           <button
             key={action}
@@ -218,7 +219,6 @@ export default function FormDesignerListPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((def) => {
-                const isDraft = def.status === 'DRAFT';
                 return (
                   <tr key={def.id}
                     className="hover:bg-gray-50 transition-colors cursor-pointer group"

@@ -9,7 +9,7 @@
  * - State machine transitions
  * - Tabbed content: Checklist | Timeline | Notes | Overrides
  */
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -28,6 +28,7 @@ import CaseTimeline from '../../components/cases/CaseTimeline'
 import OverrideReviewPanel from '../../components/cases/OverrideReviewPanel'
 import CaseParticipants from '../../components/cases/CaseParticipants'
 import DocumentViewerModal from '../../components/documents/DocumentViewerModal'
+import WorkflowRuntimeModal from '../../components/workflow/WorkflowRuntimeModal'
 import { ChecklistItemRow } from './CasesPage'
 import {
   useVerifyItems, useAssignCase, useClaimCase, useRequestAdditionalDocs,
@@ -150,6 +151,7 @@ function RequestDocsModal({ caseData, onSubmit, isPending, onClose }) {
   const [selectedCats, setSelectedCats] = useState([])
   const [comment, setComment] = useState('')
   const [reassignTo, setReassignTo] = useState(caseData?.assignedTo ?? '')
+  // eslint-disable-next-line no-unused-vars
   const [reassignToName, setReassignToName] = useState(caseData?.assignedToName ?? '')
 
   const { data: categories } = useQuery({
@@ -360,7 +362,6 @@ export default function CaseDetailPage() {
   const qc = useQueryClient()
   const { user } = useUserStore()
   const userRoles = user?.roles ?? []
-  const currentUserEmail = user?.email ?? ''
   const isAdmin = userRoles.some(r => r === 'ECM_ADMIN' || r === 'ECM_SUPER_ADMIN')
 
   const [activeTab, setActiveTab] = useState('checklist')
@@ -368,10 +369,11 @@ export default function CaseDetailPage() {
   const [showAssign, setShowAssign] = useState(false)
   const [showRequestDocs, setShowRequestDocs] = useState(false)
   const [viewingDocId, setViewingDocId] = useState(null)
+  const [viewingWorkflowId, setViewingWorkflowId] = useState(null)
 
   // Verification checkbox local state
   const [verifiedIds, setVerifiedIds] = useState(new Set())
-  const [verifyDirty, setVerifyDirty] = useState(false)
+  const [, setVerifyDirty] = useState(false)
 
   const { data: caseData, isLoading } = useQuery({
     queryKey: ['admin', 'case', caseId],
@@ -383,6 +385,7 @@ export default function CaseDetailPage() {
   useEffect(() => {
     if (caseData?.checklist) {
       const ids = new Set(caseData.checklist.filter(i => i.isVerified).map(i => i.id))
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setVerifiedIds(ids)
       setVerifyDirty(false)
     }
@@ -406,6 +409,7 @@ export default function CaseDetailPage() {
     mutationFn: ({ itemId }) => waiveCaseItem(caseId, itemId, { reason: 'Admin waiver' }),
     onSuccess: () => { toast.success('Item waived'); qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }) },
   })
+  // eslint-disable-next-line no-unused-vars
   const cancelMut = useMutation({
     mutationFn: () => cancelCase(caseId),
     onSuccess: () => { toast.success('Case cancelled'); qc.invalidateQueries({ queryKey: ['admin', 'cases'] }); navigate('/cases') },
@@ -436,9 +440,17 @@ export default function CaseDetailPage() {
   const actions = STATUS_ACTIONS[c?.status] ?? {}
   const isReturned = !!c?.returnedFromReview
 
-  // Can current user claim this case?
+  // Can current user claim this case? (assigned to a group the user belongs to, unclaimed)
   const isGroupAssigned = !!c.assignedToGroup && !c.claimedBy
-  const canClaim = actions.claim && isGroupAssigned
+  const userBelongsToGroup = isGroupAssigned && userRoles.includes(c.assignedToGroup)
+  const canClaim = userBelongsToGroup && !isCaseClosed
+
+  // Is the current user the reviewer (claimed or assigned to them) in review states?
+  const isReviewState = ['UNDER_REVIEW', 'PENDING_APPROVAL'].includes(c?.status)
+  const isWorkState = ['NEW', 'IN_PROGRESS'].includes(c?.status)
+  // Verification completeness — needed for "Submit for Review" guard
+  const progress = getChecklistProgress(checklist)
+  const canSubmitForReview = progress.allRequiredSatisfied
 
   const toggleVerify = (itemId) => {
     setVerifiedIds(prev => {
@@ -530,95 +542,103 @@ export default function CaseDetailPage() {
             </div>
           </div>
 
-          {/* Top-right actions — gated by STATUS_ACTIONS */}
+          {/* Top-right: Delete only for NEW cases */}
           <div className="flex items-center gap-2">
-            {canClaim && (
-              <button onClick={handleClaim} disabled={claimMut.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 cursor-pointer">
-                <UserPlus size={12} /> Claim
-              </button>
-            )}
-            {actions.assign && (
-              <button onClick={() => setShowAssign(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 cursor-pointer">
-                <Send size={12} /> Assign
-              </button>
-            )}
-            {actions.requestDocs && (
-              <button onClick={() => setShowRequestDocs(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 cursor-pointer">
-                <Plus size={12} /> Request Docs
-              </button>
-            )}
             {c?.status === 'NEW' && (
               <button onClick={() => { if (confirm('Permanently delete this case?')) deleteMut.mutate() }}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
                 <Trash2 size={12} /> Delete
               </button>
             )}
-            {!isCaseClosed && c?.status !== 'COMPLETED' && (
-              <button onClick={() => { if (confirm('Cancel this case?')) cancelMut.mutate() }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100">
-                <XCircle size={12} /> Cancel
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Info grid */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-5 pt-5 border-t border-gray-100">
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">Customer</p>
-            <p className="text-sm font-medium text-gray-800 mt-0.5">{c?.partyDisplayName}</p>
-            <p className="text-xs font-mono text-gray-400">{c?.partyExternalId}</p>
+        {/* Compact info row + progress bar */}
+        <div className="flex items-center justify-between gap-4 mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center gap-6 text-xs text-gray-500">
+            <span><span className="text-gray-400">Customer:</span> <span className="text-gray-800 font-medium">{c?.partyDisplayName}</span></span>
+            <span><span className="text-gray-400">Product:</span> <span className="text-gray-800">{c?.productName}</span></span>
+            <span><span className="text-gray-400">Owner:</span> {
+              c?.claimedByName || c?.claimedBy
+                ? <span className="text-green-700 font-medium">{c.claimedByName || c.claimedBy?.split('@')[0]}</span>
+                : c?.assignedToName || c?.assignedTo
+                  ? <span className="text-amber-700">→ {c.assignedToName || c.assignedTo?.split('@')[0]}</span>
+                  : c?.assignedToGroup
+                    ? <span className="text-blue-600">→ {c.assignedToGroup.replace('ECM_', '').replace(/_/g, ' ')}</span>
+                    : <span className="text-gray-400 italic">Unassigned</span>
+            }</span>
+            {c?.externalRef && <span className="font-mono text-gray-400">{c.externalRef}</span>}
+            <span><span className="text-gray-400">Opened:</span> {c?.openedAt ? new Date(c.openedAt).toLocaleDateString() : '—'}</span>
           </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">Product</p>
-            <p className="text-sm text-gray-800 mt-0.5">{c?.productName}</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">Assigned To</p>
-            <p className="text-sm text-gray-800 mt-0.5">
-              {c?.claimedByName ?? c?.assignedToName ?? c?.assignedToGroup?.replace('ECM_', '') ?? '—'}
-            </p>
-            {c?.assignedToGroup && !c?.claimedBy && (
-              <p className="text-[10px] text-amber-600 font-medium">Unclaimed (group queue)</p>
-            )}
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">Source</p>
-            <p className="text-sm text-gray-800 mt-0.5">{c?.sourceSystem}</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">Opened</p>
-            <p className="text-sm text-gray-800 mt-0.5">{c?.openedAt ? new Date(c.openedAt).toLocaleDateString() : '—'}</p>
-          </div>
+
+          {/* Inline progress */}
+          {checklist.length > 0 && (() => {
+            const progress = getChecklistProgress(checklist)
+            return (
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full transition-all"
+                    style={{ width: `${progress.percentage}%` }} />
+                </div>
+                <span className="text-[10px] text-gray-400 tabular-nums whitespace-nowrap">
+                  {progress.satisfiedAll}/{progress.total}
+                </span>
+              </div>
+            )
+          })()}
         </div>
 
-        {/* State machine transitions */}
-        {transitions.length > 0 && (
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <p className="text-[10px] uppercase tracking-wide text-gray-400 font-medium mb-2">Available Actions</p>
-            <div className="flex flex-wrap gap-2">
-              {transitions.map(t => (
-                <button key={t.target} onClick={() => t.requiresReason ? setReasonModal({ transition: t }) : statusMut.mutate({ status: t.target })}
-                  disabled={statusMut.isPending}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50
-                    ${TRANSITION_COLORS[t.target] ?? 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                  {t.label}
+        {/* All actions in one row — transitions left, management right */}
+        {(transitions.length > 0 || actions.assign || actions.requestDocs || canClaim) && (
+          <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-gray-50">
+            {/* Left: state machine transitions + claim */}
+            <div className="flex flex-wrap items-center gap-2">
+              {canClaim && (
+                <button onClick={handleClaim} disabled={claimMut.isPending}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors disabled:opacity-50 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100">
+                  {claimMut.isPending ? 'Claiming...' : 'Claim Case'}
                 </button>
-              ))}
+              )}
+              {transitions.map(t => {
+                // Disable "Submit for Review" if not all required items verified
+                const isSubmitForReview = t.target === 'REVIEW_PENDING' && c?.status === 'IN_PROGRESS'
+                const disabled = statusMut.isPending || (isSubmitForReview && !canSubmitForReview)
+                return (
+                  <button key={t.target}
+                    onClick={() => t.requiresReason ? setReasonModal({ transition: t }) : statusMut.mutate({ status: t.target })}
+                    disabled={disabled}
+                    title={isSubmitForReview && !canSubmitForReview ? 'Verify all required checklist items first' : undefined}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50
+                      ${TRANSITION_COLORS[t.target] ?? 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    {t.label}
+                  </button>
+                )
+              })}
+              {c?.status === 'IN_PROGRESS' && !canSubmitForReview && (
+                <span className="text-[10px] text-amber-600 flex items-center gap-1">
+                  <AlertCircle size={10} /> Verify all required items before submitting
+                </span>
+              )}
+            </div>
+
+            {/* Right: management actions */}
+            <div className="flex items-center gap-2">
+              {actions.requestDocs && (
+                <button onClick={() => setShowRequestDocs(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 cursor-pointer">
+                  <Plus size={12} /> Request Docs
+                </button>
+              )}
+              {actions.assign && (
+                <button onClick={() => setShowAssign(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 cursor-pointer">
+                  <Send size={12} /> Assign
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
-
-      {/* Progress bar */}
-      {checklist.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 mb-5">
-          <ChecklistProgressBar checklist={checklist} />
-        </div>
-      )}
 
       {/* Tabbed content */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -641,55 +661,72 @@ export default function CaseDetailPage() {
         <div className="p-5">
           {activeTab === 'checklist' && (
             <div>
+              {/* Verification controls — only in work states */}
+              {isWorkState && checklist.length > 0 && (
+                <div className="mb-4 p-3 bg-blue-50/50 rounded-lg border border-blue-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-semibold text-gray-700">Verification</h4>
+                    <button onClick={handleSaveVerification} disabled={verifyMut.isPending}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50">
+                      <Save size={11} /> {verifyMut.isPending ? 'Saving...' : 'Save Verification'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                    {checklist.map(item => (
+                      <label key={item.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-blue-100/50 cursor-pointer text-xs">
+                        <input type="checkbox" checked={verifiedIds.has(item.id)}
+                          onChange={() => toggleVerify(item.id)} className="rounded text-blue-600" />
+                        <span className={`${verifiedIds.has(item.id) ? 'text-green-700 font-medium' : 'text-gray-600'}`}>
+                          {item.documentTypeName ?? item.categoryName ?? `Item #${item.id}`}
+                        </span>
+                        {item.isRequired && <span className="text-[9px] text-red-400 font-medium">REQ</span>}
+                      </label>
+                    ))}
+                  </div>
+                  <ChecklistProgressBar checklist={checklist} />
+                </div>
+              )}
+
+              {/* Review summary — shown in review states */}
+              {isReviewState && checklist.length > 0 && (
+                <div className="mb-4 p-3 bg-indigo-50/50 rounded-lg border border-indigo-100">
+                  <h4 className="text-xs font-semibold text-indigo-700 mb-2">Review Summary</h4>
+                  <ChecklistProgressBar checklist={checklist} />
+                  <div className="mt-2 grid grid-cols-3 gap-3 text-center text-xs">
+                    <div className="bg-white rounded-lg p-2 border border-indigo-100">
+                      <p className="text-lg font-bold text-green-600">{checklist.filter(i => i.isVerified).length}</p>
+                      <p className="text-gray-500">Verified</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-indigo-100">
+                      <p className="text-lg font-bold text-blue-600">{checklist.filter(i => ['UPLOADED', 'APPROVED'].includes(i.status)).length}</p>
+                      <p className="text-gray-500">Documents</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-indigo-100">
+                      <p className="text-lg font-bold text-amber-600">{checklist.filter(i => i.status === 'PENDING').length}</p>
+                      <p className="text-gray-500">Pending</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {checklist.length === 0 ? (
                 <div className="flex items-center gap-2 px-3 py-6 bg-amber-50 rounded-lg border border-amber-100">
                   <AlertCircle size={14} className="text-amber-500" />
                   <p className="text-xs text-amber-700">No document types configured for this product.</p>
                 </div>
               ) : (
-                <>
-                  <div className="space-y-2">
-                    {checklist.map(item => (
-                      <div key={item.id} className="flex items-start gap-3">
-                        {/* Verification checkbox */}
-                        <div className="pt-3.5 flex-shrink-0">
-                          <input
-                            type="checkbox"
-                            checked={verifiedIds.has(item.id)}
-                            onChange={() => toggleVerify(item.id)}
-                            disabled={isCaseClosed || item.status === 'PENDING'}
-                            className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500 disabled:opacity-30"
-                            title={item.status === 'PENDING' ? 'Upload a document first' : 'Mark as verified'}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <ChecklistItemRow
-                            item={item} caseId={caseId} caseStatus={c?.status}
-                            partyExternalId={c?.partyExternalId} isAdmin={isAdmin}
-                            onWaive={() => waiveMut.mutate({ itemId: item.id })}
-                            onViewDocument={(docId) => setViewingDocId(docId)}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Save Verification button */}
-                  {!isCaseClosed && (
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                      <p className="text-xs text-gray-400">
-                        {verifiedIds.size} of {checklist.length} items verified
-                        {verifyDirty && <span className="text-amber-500 ml-2">Unsaved changes</span>}
-                      </p>
-                      <button onClick={handleSaveVerification}
-                        disabled={!verifyDirty || verifyMut.isPending}
-                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                        {verifyMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                        Save Verification
-                      </button>
-                    </div>
-                  )}
-                </>
+                <div className="space-y-2">
+                  {checklist.map(item => (
+                    <ChecklistItemRow
+                      key={item.id}
+                      item={item} caseId={caseId} caseStatus={c?.status}
+                      partyExternalId={c?.partyExternalId} isAdmin={isAdmin}
+                      onWaive={() => waiveMut.mutate({ itemId: item.id })}
+                      onViewDocument={(docId) => setViewingDocId(docId)}
+                      onViewWorkflow={(wfId) => setViewingWorkflowId(wfId)}
+                    />
+                  ))}
+                </div>
               )}
 
               {/* Additional Documents — external uploads */}
@@ -718,7 +755,10 @@ export default function CaseDetailPage() {
           onClose={() => setShowRequestDocs(false)} />
       )}
       {viewingDocId && (
-        <DocumentViewerModal documentId={viewingDocId} onClose={() => setViewingDocId(null)} previewOnly />
+        <DocumentViewerModal documentId={viewingDocId} caseId={caseId} onClose={() => setViewingDocId(null)} />
+      )}
+      {viewingWorkflowId && (
+        <WorkflowRuntimeModal workflowInstanceId={viewingWorkflowId} onClose={() => setViewingWorkflowId(null)} />
       )}
     </div>
   )

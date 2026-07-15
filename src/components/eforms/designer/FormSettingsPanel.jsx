@@ -15,7 +15,7 @@
 import { useEFormsDesignerStore } from '../../../store/eformsStore';
 import { useWorkflowDefinitions } from '../../../hooks/useWorkflow';
 import { useCategories } from '../../../hooks/useAdmin';
-import { Loader2, AlertCircle, Zap, ZapOff } from 'lucide-react';
+import { Loader2, AlertCircle, Zap, ZapOff, PenTool } from 'lucide-react';
 
 // ─── Static option lists ──────────────────────────────────────────────────────
 
@@ -337,6 +337,58 @@ export default function FormSettingsPanel({ style }) {
                 No workflow linked. Submissions will be stored but no review task
                 will be created. Enable the toggle above and select a workflow to
                 route submissions to a reviewer.
+              </p>
+            </div>
+          )}
+        </Section>
+
+        {/* ── DocuSign e-signature ──────────────────────────────────────── */}
+        <Section title="DocuSign e-Signature">
+          <Toggle
+            label="Requires signature"
+            checked={meta.docusignRequiresSignature}
+            onChange={(v) => updateMeta({ docusignRequiresSignature: v })}
+          />
+
+          {meta.docusignRequiresSignature ? (
+            <>
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-indigo-50 border border-dashed border-indigo-100">
+                <PenTool size={13} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-indigo-600 leading-relaxed">
+                  Signer name/email and the signing-request email are entered by
+                  whoever fills out this form — not configured here. The email
+                  defaults to the org-wide "Signing Request" template (Admin →
+                  Email Templates), which the filler can override per submission.
+                </p>
+              </div>
+
+              <Field label="Envelope Expiry (days)">
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={meta.docusignExpiryDays}
+                  onChange={(e) => updateMeta({ docusignExpiryDays: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                  className={`${inputCls} w-24`}
+                />
+              </Field>
+              <Toggle
+                label="Allow decline"
+                checked={meta.docusignAllowDecline}
+                onChange={(v) => updateMeta({ docusignAllowDecline: v })}
+              />
+              <Toggle
+                label="Allow reassign"
+                checked={meta.docusignAllowReassign}
+                onChange={(v) => updateMeta({ docusignAllowReassign: v })}
+              />
+            </>
+          ) : (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-gray-50 border border-dashed border-gray-200">
+              <PenTool size={13} className="text-gray-300 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                No signature required. Enable the toggle above to send this form's
+                submissions to DocuSign for e-signature.
               </p>
             </div>
           )}

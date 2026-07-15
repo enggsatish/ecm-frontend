@@ -94,16 +94,16 @@ export function getAvailableTransitions(status) {
  * Controls button visibility on the case detail page.
  */
 export const STATUS_ACTIONS = {
-  [CASE_STATUS.NEW]:              { assign: true, claim: true,  requestDocs: false, addParticipant: false, verify: false, upload: false },
-  [CASE_STATUS.IN_PROGRESS]:      { assign: true, claim: false, requestDocs: true,  addParticipant: true,  verify: true,  upload: true  },
-  [CASE_STATUS.REVIEW_PENDING]:   { assign: true, claim: true,  requestDocs: false, addParticipant: false, verify: false, upload: false },
-  [CASE_STATUS.UNDER_REVIEW]:     { assign: true, claim: false, requestDocs: true,  addParticipant: true,  verify: true,  upload: false },
-  [CASE_STATUS.PENDING_APPROVAL]: { assign: true, claim: true,  requestDocs: false, addParticipant: false, verify: false, upload: false },
-  [CASE_STATUS.APPROVED]:         { assign: false, claim: false, requestDocs: false, addParticipant: false, verify: false, upload: false },
-  [CASE_STATUS.COMPLETED]:        { assign: false, claim: false, requestDocs: false, addParticipant: false, verify: false, upload: false },
-  [CASE_STATUS.REJECTED]:         { assign: false, claim: false, requestDocs: false, addParticipant: false, verify: false, upload: false },
-  [CASE_STATUS.CANCELLED]:        { assign: false, claim: false, requestDocs: false, addParticipant: false, verify: false, upload: false },
-  [CASE_STATUS.ON_HOLD]:          { assign: true,  claim: false, requestDocs: false, addParticipant: false, verify: false, upload: false },
+  [CASE_STATUS.NEW]:              { assign: true, requestDocs: false, addParticipant: false, upload: false },
+  [CASE_STATUS.IN_PROGRESS]:      { assign: true, requestDocs: true,  addParticipant: true,  upload: true  },
+  [CASE_STATUS.REVIEW_PENDING]:   { assign: true, requestDocs: false, addParticipant: false, upload: false },
+  [CASE_STATUS.UNDER_REVIEW]:     { assign: true, requestDocs: true,  addParticipant: true,  upload: false },
+  [CASE_STATUS.PENDING_APPROVAL]: { assign: true, requestDocs: false, addParticipant: false, upload: false },
+  [CASE_STATUS.APPROVED]:         { assign: false, requestDocs: false, addParticipant: false, upload: false },
+  [CASE_STATUS.COMPLETED]:        { assign: false, requestDocs: false, addParticipant: false, upload: false },
+  [CASE_STATUS.REJECTED]:         { assign: false, requestDocs: false, addParticipant: false, upload: false },
+  [CASE_STATUS.CANCELLED]:        { assign: false, requestDocs: false, addParticipant: false, upload: false },
+  [CASE_STATUS.ON_HOLD]:          { assign: true,  requestDocs: false, addParticipant: false, upload: false },
 }
 
 /**

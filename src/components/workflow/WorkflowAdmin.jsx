@@ -6,7 +6,7 @@ import {
 import {
   listWorkflowDefinitions, createWorkflowDefinition,
   listWorkflowGroups, createWorkflowGroup,
-  listCategoryMappings, createCategoryMapping, deleteCategoryMapping,
+  listCategoryMappings, deleteCategoryMapping,
 } from '../../api/workflowApi'
 import toast from 'react-hot-toast'
 

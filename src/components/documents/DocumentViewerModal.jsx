@@ -17,10 +17,12 @@
  */
 import { useState, useEffect, useRef } from 'react'
 import { X, Loader2, AlertCircle, FileText, User, Tag, MapPin, Clock, Scan,
-         CheckCircle, XCircle, UserCheck, MessageSquare, Play, Flag,
-         Maximize2, Minimize2 } from 'lucide-react'
+         CheckCircle, XCircle, UserCheck, MessageSquare, Play, Flag, Eye,
+         Maximize2, Minimize2, PenTool, Send, FileSignature } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { getDocument, downloadDocument } from '../../api/documentsApi'
+import PdfAnnotationViewer from './PdfAnnotationViewer'
+import AiRegionSelector from './AiRegionSelector'
+import { getDocument, getVersionHistory } from '../../api/documentsApi'
 import { getDocumentWorkflows } from '../../api/workflowApi'
 import apiClient from '../../api/apiClient'
 
@@ -32,7 +34,7 @@ const OCR_POLL_INTERVAL_MS = 3000
 // Stop polling after this long even if OCR never completes (ms)
 const OCR_POLL_TIMEOUT_MS  = 120_000   // 2 minutes
 
-export default function DocumentViewerModal({ documentId, onClose, previewOnly = false }) {
+export default function DocumentViewerModal({ documentId, onClose, previewOnly = false, caseId = null }) {
   const [tab, setTab] = useState('preview')
   const [maximized, setMaximized] = useState(false)
   const [previewUrl, setPreviewUrl]     = useState(null)
@@ -43,7 +45,7 @@ export default function DocumentViewerModal({ documentId, onClose, previewOnly =
   // ── OCR poll timeout tracking ─────────────────────────────────────────────
   // Track when we first opened this modal so we can stop polling after the
   // timeout even if ocrCompleted never becomes true (e.g. OCR_FAILED status).
-  const openedAtRef     = useRef(Date.now())
+  const [openedAt] = useState(() => Date.now())
   const [pollExpired, setPollExpired] = useState(false)
 
   // ── Document query with conditional polling ───────────────────────────────
@@ -60,7 +62,7 @@ export default function DocumentViewerModal({ documentId, onClose, previewOnly =
       // Stop polling once OCR completes (ocrCompleted=true) or document failed
       if (d?.ocrCompleted || d?.status === 'OCR_FAILED') return false
       // Stop polling after timeout — prevent indefinite background requests
-      if (Date.now() - openedAtRef.current > OCR_POLL_TIMEOUT_MS) {
+      if (Date.now() - openedAt > OCR_POLL_TIMEOUT_MS) {
         setPollExpired(true)
         return false
       }
@@ -99,11 +101,17 @@ export default function DocumentViewerModal({ documentId, onClose, previewOnly =
     CANCELLED:           { label: 'Cancelled',      color: 'text-gray-500 bg-gray-100' },
   }
 
-  // ── Fetch blob for preview ────────────────────────────────────────────────
+  // ── Fetch blob for preview (non-PDF only — PDFs use PdfAnnotationViewer) ──
   useEffect(() => {
-    if (!doc || tab !== 'preview') return
+    if (!doc || (tab !== 'preview' && tab !== 'ai')) return
     if (!isPreviewable(doc.mimeType)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPreviewUrl(null)
+      return
+    }
+    // PDFs are handled by PdfAnnotationViewer which loads its own data
+    if (doc.mimeType === 'application/pdf') {
+      setPreviewLoading(false)
       return
     }
 
@@ -157,6 +165,8 @@ export default function DocumentViewerModal({ documentId, onClose, previewOnly =
     ['preview',  'Preview'],
     ['fields',   'Extracted Fields'],
     ['text',     'Raw Text'],
+    ['ai',       'AI Train'],
+    ['versions', 'Versions'],
     ['metadata', 'Metadata'],
     ['history',  'Pipeline'],
   ]
@@ -235,21 +245,38 @@ export default function DocumentViewerModal({ documentId, onClose, previewOnly =
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {isLoading && <Center text="Loading document..." spinner />}
 
-          {/* ── Preview ── */}
+          {/* ── Preview (PDF with annotations or iframe fallback) ── */}
           {!isLoading && tab === 'preview' && (
             <>
-              {previewLoading && <Center text="Loading preview…" spinner />}
-              {previewError   && <Center icon={<AlertCircle size={28} className="text-red-400" />} text={previewError} />}
-              {!previewLoading && !previewError && previewUrl && (
-                <iframe
-                  src={previewUrl}
-                  className={`w-full rounded-lg border border-gray-200 ${maximized ? 'flex-1 min-h-0' : 'h-[60vh]'}`}
-                  style={maximized ? { height: 'calc(100vh - 200px)' } : undefined}
-                  title="Document preview"
-                />
+              {/* PDF → PdfAnnotationViewer (has its own loading state) */}
+              {doc?.mimeType === 'application/pdf' && (
+                <div className="-mx-4 -mb-4" style={{ height: 'calc(100% + 2rem)' }}>
+                  <PdfAnnotationViewer
+                    documentId={documentId}
+                    downloadUrl={doc?.downloadUrl}
+                    caseId={caseId}
+                    canAnnotate={!!caseId}
+                  />
+                </div>
               )}
-              {!previewLoading && !previewError && !previewUrl && (
-                <Center text={`Preview not available for ${doc?.mimeType ?? 'this file type'}`} />
+
+              {/* Non-PDF → iframe with blob URL */}
+              {doc?.mimeType !== 'application/pdf' && (
+                <>
+                  {previewLoading && <Center text="Loading preview…" spinner />}
+                  {previewError && <Center icon={<AlertCircle size={28} className="text-red-400" />} text={previewError} />}
+                  {!previewLoading && !previewError && previewUrl && (
+                    <iframe
+                      src={previewUrl}
+                      className={`w-full rounded-lg border border-gray-200 ${maximized ? 'flex-1 min-h-0' : 'h-[60vh]'}`}
+                      style={maximized ? { height: 'calc(100vh - 200px)' } : undefined}
+                      title="Document preview"
+                    />
+                  )}
+                  {!previewLoading && !previewError && !previewUrl && (
+                    <Center text={`Preview not available for ${doc?.mimeType ?? 'this file type'}`} />
+                  )}
+                </>
               )}
             </>
           )}
@@ -296,6 +323,21 @@ export default function DocumentViewerModal({ documentId, onClose, previewOnly =
             </>
           )}
 
+          {/* ── AI Training ── */}
+          {!isLoading && tab === 'ai' && (
+            <AiRegionSelector
+              documentId={documentId}
+              previewUrl={previewUrl}
+              mimeType={doc?.mimeType}
+              categoryId={doc?.categoryId}
+            />
+          )}
+
+          {/* ── Versions ── */}
+          {!isLoading && tab === 'versions' && (
+            <VersionsPanel documentId={documentId} />
+          )}
+
           {/* ── History / Pipeline Graph ── */}
           {!isLoading && tab === 'history' && doc && (
             <TimelinePanel documentId={documentId} doc={doc} activeWorkflow={activeWorkflow} />
@@ -333,6 +375,17 @@ export default function DocumentViewerModal({ documentId, onClose, previewOnly =
                         {REVIEW_STATUS_LABELS[activeWorkflow.status]?.label || activeWorkflow.status}
                       </span>
                     : <span className="text-gray-400">No workflow</span>
+                }
+              />
+              <MetaRow
+                icon={<UserCheck size={13} />}
+                label="Lock"
+                value={
+                  doc.lockedBy && doc.lockExpiresAt && new Date(doc.lockExpiresAt) > new Date()
+                    ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                        Checked out by {doc.lockedBy?.split('@')[0]} (expires {new Date(doc.lockExpiresAt).toLocaleTimeString()})
+                      </span>
+                    : <span className="text-gray-400">Not locked</span>
                 }
               />
               <MetaRow icon={<Clock size={13} />} label="Created" value={doc.createdAt ? new Date(doc.createdAt).toLocaleString() : '—'} />
@@ -409,6 +462,7 @@ const OCR_EVENTS    = new Set(['OCR_COMPLETED'])
 const WF_EVENTS     = new Set(['WORKFLOW_STARTED','TASK_CLAIMED','TASK_APPROVED','TASK_REJECTED',
                                'TASK_INFO_REQUESTED','TASK_RELEASED','WORKFLOW_COMPLETED',
                                'FORM_APPROVED','FORM_REJECTED'])
+const ESIGN_EVENTS  = new Set(['DOCUSIGN_SENT','DOCUSIGN_SIGNED','DOCUSIGN_DECLINED','DOCUSIGN_VOIDED'])
 
 function fmtTs(ts) {
   if (!ts) return ''
@@ -449,8 +503,62 @@ function Connector({ color = 'gray' }) {
   const borderColor = {
     gray: 'border-gray-300', blue: 'border-blue-300', teal: 'border-teal-300',
     green: 'border-green-300', red: 'border-red-300', indigo: 'border-indigo-300',
+    purple: 'border-purple-300', amber: 'border-amber-300',
   }
   return <div className={`w-8 border-t-2 border-dashed ${borderColor[color] || borderColor.gray} self-center mt-[-14px]`} />
+}
+
+function VersionsPanel({ documentId }) {
+  const { data: versions = [], isLoading } = useQuery({
+    queryKey: ['document-versions', documentId],
+    queryFn: () => getVersionHistory(documentId),
+    enabled: !!documentId,
+    staleTime: 60_000,
+  })
+
+  if (isLoading) return <Center spinner text="Loading versions..." />
+
+  if (versions.length <= 1) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+        <FileText size={24} className="mb-2 opacity-50" />
+        <p className="text-sm">This is the only version of this document.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-gray-500 mb-3">{versions.length} version{versions.length !== 1 ? 's' : ''} in this chain</p>
+      {versions.map((v, i) => (
+        <div key={v.id} className={`flex items-center gap-3 p-3 rounded-lg border ${
+          v.id === documentId ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
+        }`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+            v.isLatestVersion ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+          }`}>
+            v{v.version || i + 1}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-900 truncate">{v.originalFilename || v.name}</span>
+              {v.isLatestVersion && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Latest</span>
+              )}
+              {v.id === documentId && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Viewing</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-[10px] text-gray-400 mt-0.5">
+              <span>{v.uploadedByEmail || 'System'}</span>
+              <span>{v.createdAt ? new Date(v.createdAt).toLocaleString() : ''}</span>
+              <span>{v.fileSizeBytes ? (v.fileSizeBytes / 1024).toFixed(0) + ' KB' : ''}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function TimelinePanel({ documentId, doc, activeWorkflow }) {
@@ -475,12 +583,34 @@ function TimelinePanel({ documentId, doc, activeWorkflow }) {
   const taskRejected   = findEvt('TASK_REJECTED')
   const taskInfoReq    = findEvt('TASK_INFO_REQUESTED')
   const wfCompleted    = findEvt('WORKFLOW_COMPLETED')
+  const dsigSent       = findEvt('DOCUSIGN_SENT')
+  const dsigSigned     = findEvt('DOCUSIGN_SIGNED')
+  const dsigDeclined   = findEvt('DOCUSIGN_DECLINED')
+  const dsigVoided     = findEvt('DOCUSIGN_VOIDED')
 
-  const hasWorkflow = !!(activeWorkflow || wfStarted || wfCompleted)
+  const hasWorkflow  = !!(activeWorkflow || wfStarted || wfCompleted)
+  const hasDocuSign  = !!(dsigSent || dsigSigned || dsigDeclined || dsigVoided
+                          || doc?.status === 'PENDING_SIGNATURE' || doc?.status === 'SIGNED'
+                          || doc?.status === 'SIGN_DECLINED')
 
   // OCR status
   const ocrDone = !!ocrCompleted || doc?.ocrCompleted
   const ocrFailed = doc?.status === 'OCR_FAILED'
+  const hasText = doc?.extractedText && doc.extractedText.length > 0
+
+  // Classification status (still used for non-pipeline UI elements)
+  const isClassified = !!doc?.categoryId
+  const classSource = doc?.classificationSource
+  const needsClassification = ocrDone && !isClassified && !ocrFailed
+
+  // Pipeline state — data-driven visualization
+  const pipelineSteps = (() => {
+    try {
+      const raw = doc?.pipelineState
+      if (!raw) return null
+      return typeof raw === 'string' ? JSON.parse(raw) : raw
+    } catch { return null }
+  })()
 
   // Workflow status
   const wfStatus = activeWorkflow?.status
@@ -488,41 +618,98 @@ function TimelinePanel({ documentId, doc, activeWorkflow }) {
   return (
     <div className="p-4 space-y-6">
       {/* ── Graph Legend ── */}
-      <div className="flex items-center gap-4 text-[10px] text-gray-400">
+      <div className="flex items-center gap-4 text-[10px] text-gray-400 flex-wrap">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-300" /> Pending</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" /> Active</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400" /> Done</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Rejected</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Needs Action</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-400" /> Signing</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Failed</span>
       </div>
 
       {/* ── Root Node ── */}
       <div className="flex items-start gap-0">
         <Node label="Uploaded" ts={fmtTs(docCreated?.timestamp || doc?.createdAt)}
-              color="purple" icon={FileText} />
+              color="green" icon={FileText} />
 
         <div className="flex flex-col gap-4 ml-2">
-          {/* ── OCR Branch ── */}
-          <div className="flex items-center gap-0">
-            {/* Branch connector */}
-            <div className="w-6 flex flex-col items-center">
-              <div className="w-px h-3 bg-gray-300" />
-              <div className="w-6 border-t-2 border-gray-300 border-dashed" />
-            </div>
+          {/* ── Data-driven pipeline steps ── */}
+          {pipelineSteps && pipelineSteps.length > 0 ? (
+            Object.entries(
+              pipelineSteps.reduce((groups, s) => {
+                const g = s.group || 'default'
+                ;(groups[g] = groups[g] || []).push(s)
+                return groups
+              }, {})
+            ).map(([group, groupSteps]) => {
+              const groupConfig = {
+                ingest:   { label: 'Ingest',   border: 'border-gray-200',   bg: 'bg-gray-50/50',   text: 'text-gray-500' },
+                ocr:      { label: 'OCR',      border: 'border-teal-100',   bg: 'bg-teal-50/50',   text: 'text-teal-600' },
+                classify: { label: 'Classify',  border: 'border-amber-100',  bg: 'bg-amber-50/50',  text: 'text-amber-600' },
+                review:   { label: 'Review',   border: 'border-indigo-100', bg: 'bg-indigo-50/50', text: 'text-indigo-600' },
+                default:  { label: 'Pipeline', border: 'border-gray-200',   bg: 'bg-gray-50/50',   text: 'text-gray-500' },
+              }[group] || { label: group, border: 'border-gray-200', bg: 'bg-gray-50/50', text: 'text-gray-500' }
 
-            <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-teal-50/50 border border-teal-100">
-              <span className="text-[10px] font-bold text-teal-600 mr-1 shrink-0">OCR</span>
-              <Connector color="teal" />
-              <Node label={ocrFailed ? 'Failed' : 'Extract'}
-                    ts={fmtTs(ocrCompleted?.timestamp)}
-                    color={ocrFailed ? 'red' : ocrDone ? 'teal' : 'gray'}
-                    pulse={!ocrDone && !ocrFailed}
-                    icon={Scan} />
-              <Connector color={ocrDone ? 'teal' : 'gray'} />
-              <Node label={ocrFailed ? 'Error' : ocrDone ? 'Done' : 'Pending'}
-                    color={ocrFailed ? 'red' : ocrDone ? 'green' : 'gray'}
-                    icon={ocrDone ? CheckCircle : ocrFailed ? XCircle : Clock} />
-            </div>
-          </div>
+              return (
+                <div key={group} className="flex items-center gap-0">
+                  <div className="w-6 flex flex-col items-center">
+                    <div className="w-px h-3 bg-gray-300" />
+                    <div className="w-6 border-t-2 border-gray-300 border-dashed" />
+                  </div>
+                  <div className={`flex items-center gap-1 px-2 py-1.5 rounded-lg ${groupConfig.bg} border ${groupConfig.border}`}>
+                    <span className={`text-[10px] font-bold ${groupConfig.text} mr-1 shrink-0`}>{groupConfig.label}</span>
+                    {groupSteps.map((s, i) => {
+                      const color = { DONE: 'green', PENDING: 'amber', FAILED: 'red', SKIPPED: 'gray', ACTIVE: 'blue' }[s.status] || 'gray'
+                      const icon = { DONE: CheckCircle, PENDING: Clock, FAILED: XCircle, SKIPPED: AlertCircle, ACTIVE: Loader2 }[s.status] || Clock
+                      return (
+                        <span key={s.step + i} className="contents">
+                          <Connector color={color} />
+                          <Node label={s.label} sub={s.detail} color={color}
+                                pulse={s.status === 'PENDING' || s.status === 'ACTIVE'}
+                                icon={icon} />
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            /* Fallback for documents without pipeline_state (legacy) */
+            <>
+              <div className="flex items-center gap-0">
+                <div className="w-6 flex flex-col items-center">
+                  <div className="w-px h-3 bg-gray-300" />
+                  <div className="w-6 border-t-2 border-gray-300 border-dashed" />
+                </div>
+                <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-teal-50/50 border border-teal-100">
+                  <span className="text-[10px] font-bold text-teal-600 mr-1 shrink-0">OCR</span>
+                  <Connector color="teal" />
+                  <Node label={ocrFailed ? 'Failed' : ocrDone ? (hasText ? 'Text Extracted' : 'No Text') : 'Processing'}
+                        sub={ocrDone && hasText ? `${doc.extractedText.length} chars` : null}
+                        ts={fmtTs(ocrCompleted?.timestamp)}
+                        color={ocrFailed ? 'red' : ocrDone ? (hasText ? 'teal' : 'amber') : 'gray'}
+                        pulse={!ocrDone && !ocrFailed}
+                        icon={Scan} />
+                </div>
+              </div>
+              <div className="flex items-center gap-0">
+                <div className="w-6 flex flex-col items-center">
+                  <div className="w-px h-3 bg-gray-300" />
+                  <div className="w-6 border-t-2 border-amber-300 border-dashed" />
+                </div>
+                <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-amber-50/50 border border-amber-100">
+                  <span className="text-[10px] font-bold text-amber-600 mr-1 shrink-0">Classify</span>
+                  <Connector color={isClassified ? 'green' : needsClassification ? 'amber' : 'gray'} />
+                  <Node
+                    label={isClassified ? (classSource === 'MANUAL' ? 'Manual' : 'Auto') : needsClassification ? 'Needs Classification' : 'Pending'}
+                    color={isClassified ? 'green' : needsClassification ? 'amber' : 'gray'}
+                    pulse={needsClassification}
+                    icon={isClassified ? CheckCircle : needsClassification ? AlertCircle : Clock} />
+                </div>
+              </div>
+            </>
+          )}
 
           {/* ── Workflow Branch (only if workflow exists) ── */}
           {hasWorkflow && (
@@ -566,7 +753,7 @@ function TimelinePanel({ documentId, doc, activeWorkflow }) {
                   }
                   sub={
                     (taskApproved?.actor || taskRejected?.actor || taskInfoReq?.actor)
-                      ? (taskApproved?.actor || taskRejected?.actor || taskInfoReq?.actor).split('@')[0]
+                      ? (taskApproved?.actor || taskRejected?.actor || (taskInfoReq?.actor ?? '')).split('@')[0]
                       : null
                   }
                   ts={fmtTs(taskApproved?.timestamp || taskRejected?.timestamp || wfCompleted?.timestamp)}
@@ -579,6 +766,63 @@ function TimelinePanel({ documentId, doc, activeWorkflow }) {
                     taskApproved || wfStatus === 'COMPLETED_APPROVED' ? CheckCircle :
                     taskRejected || wfStatus === 'COMPLETED_REJECTED' ? XCircle :
                     taskInfoReq ? MessageSquare : Clock
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── eSign Branch (only if DocuSign involved) ── */}
+          {hasDocuSign && (
+            <div className="flex items-center gap-0">
+              <div className="w-6 flex flex-col items-center">
+                <div className="w-px h-3 bg-gray-300" />
+                <div className="w-6 border-t-2 border-purple-300 border-dashed" />
+              </div>
+
+              <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-purple-50/50 border border-purple-100">
+                <span className="text-[10px] font-bold text-purple-600 mr-1 shrink-0">eSign</span>
+
+                {/* Sent */}
+                <Connector color={dsigSent ? 'purple' : 'gray'} />
+                <Node label="Sent"
+                      ts={fmtTs(dsigSent?.timestamp)}
+                      color={dsigSent ? 'purple' : 'gray'}
+                      icon={Send} />
+
+                {/* Awaiting */}
+                <Connector color={
+                  dsigSigned ? 'green' : dsigDeclined ? 'red' : dsigSent ? 'purple' : 'gray'
+                } />
+                <Node label="Awaiting"
+                      sub={dsigSent?.comment || null}
+                      color={
+                        dsigSigned ? 'green' :
+                        dsigDeclined || dsigVoided ? 'red' :
+                        dsigSent ? 'amber' : 'gray'
+                      }
+                      pulse={!!dsigSent && !dsigSigned && !dsigDeclined && !dsigVoided}
+                      icon={PenTool} />
+
+                {/* Result */}
+                <Connector color={
+                  dsigSigned ? 'green' : dsigDeclined || dsigVoided ? 'red' : 'gray'
+                } />
+                <Node
+                  label={
+                    dsigSigned ? 'Signed' :
+                    dsigDeclined ? 'Declined' :
+                    dsigVoided ? 'Voided' :
+                    'Pending'
+                  }
+                  ts={fmtTs(dsigSigned?.timestamp || dsigDeclined?.timestamp || dsigVoided?.timestamp)}
+                  color={
+                    dsigSigned ? 'green' :
+                    dsigDeclined || dsigVoided ? 'red' : 'gray'
+                  }
+                  icon={
+                    dsigSigned ? FileSignature :
+                    dsigDeclined || dsigVoided ? XCircle : Clock
                   }
                 />
               </div>

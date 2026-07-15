@@ -10,6 +10,7 @@ import { Link2, Scan, Bot, Loader2, Save, Cloud, Key, Info, TestTube2, CheckCirc
 import toast from 'react-hot-toast'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getTenantConfig, bulkUpdateConfig, getAiGatewayIntegration, saveAiGatewayIntegration } from '../../api/adminApi'
+import apiClient from '../../api/apiClient'
 
 // Lazy load the DocuSign settings (reuse existing page as a component)
 const DocuSignSettings = lazy(() => import('./DocuSignSettingsPage'))
@@ -38,25 +39,23 @@ function OcrEngineTab() {
     setTesting(true)
     setTestResult(null)
     try {
-      // Test via backend proxy to avoid exposing API key in browser network traffic
-      // TODO: Replace with dedicated backend endpoint POST /api/admin/integrations/test-azure
-      const url = endpoint.replace(/\/$/, '') + '/documentintelligence/documentModels?api-version=2024-11-30'
-      const res = await fetch(url, {
-        headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+      // Routed through ecm-ocr's server-side test endpoint (same one the OCR Engine
+      // pipeline tab uses) — a direct browser fetch to Azure fails CORS.
+      const res = await apiClient.post('/api/ocr/test-connection', {
+        engine: 'azure',
+        config: { endpoint, key: apiKey },
       })
-      if (res.ok) {
-        const data = await res.json()
-        const modelCount = data.value?.length ?? 0
-        setTestResult({ ok: true, message: `Connected — ${modelCount} models available` })
+      const result = res.data?.data ?? res.data
+      setTestResult({ ok: result.success, message: result.message })
+      if (result.success) {
         toast.success('Azure AI connection successful')
       } else {
-        const errText = await res.text().catch(() => res.statusText)
-        setTestResult({ ok: false, message: `HTTP ${res.status}: ${errText}` })
         toast.error('Connection failed — check endpoint and key')
       }
     } catch (err) {
-      setTestResult({ ok: false, message: err.message })
-      toast.error('Connection failed: ' + err.message)
+      const message = err.response?.data?.message || err.message
+      setTestResult({ ok: false, message })
+      toast.error('Connection failed: ' + message)
     } finally {
       setTesting(false)
     }
@@ -230,6 +229,7 @@ function AiGatewayTab() {
   const [url, setUrl]                   = useState('')
   const [baseUrl, setBaseUrl]           = useState('')
   const [oktaClientId, setOktaClientId] = useState('')
+  const [oktaScope, setOktaScope]       = useState('')
   const [route, setRoute]               = useState('direct')
 
   // HMAC secret (write-only)
@@ -252,6 +252,7 @@ function AiGatewayTab() {
     setUrl(data?.url || '')
     setBaseUrl(data?.baseUrl || '')
     setOktaClientId(data?.oktaClientId || '')
+    setOktaScope(data?.oktaScope || '')
     setRoute(data?.route || 'direct')
     setHmacSecret('')
     setEditingHmacSecret(false)
@@ -281,6 +282,7 @@ function AiGatewayTab() {
     if (url !== (data?.url || ''))                     payload.url = url
     if (baseUrl !== (data?.baseUrl || ''))             payload.baseUrl = baseUrl
     if (oktaClientId !== (data?.oktaClientId || ''))   payload.oktaClientId = oktaClientId
+    if (oktaScope !== (data?.oktaScope || ''))         payload.oktaScope = oktaScope
     if (route !== (data?.route || 'direct'))           payload.route = route
     if (editingHmacSecret && hmacSecret.trim())        payload.hmacSecret = hmacSecret.trim()
     if (editingOktaSecret && oktaSecret.trim())        payload.oktaClientSecret = oktaSecret.trim()
@@ -335,6 +337,7 @@ function AiGatewayTab() {
       url !== (data?.url || '') ||
       baseUrl !== (data?.baseUrl || '') ||
       oktaClientId !== (data?.oktaClientId || '') ||
+      oktaScope !== (data?.oktaScope || '') ||
       route !== (data?.route || 'direct')
     )
   }
@@ -402,6 +405,8 @@ function AiGatewayTab() {
       </div>
 
       {/* ─── AI Gateway Service Connection (for /api/invoke) ─── */}
+      {/* Only shown when gateway routing is selected — the fields are noise when on direct mode */}
+      {route === 'gateway' && (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Service Connection (OCR → /api/invoke)</h3>
@@ -441,6 +446,29 @@ function AiGatewayTab() {
               <input type="text" value={oktaClientId}
                 onChange={e => { setOktaClientId(e.target.value); setDirty(true) }}
                 placeholder="0oa11q7ertmhbm1ml698"
+                autoComplete="off"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            </div>
+          </div>
+        </div>
+
+        {/* Okta Scope */}
+        <div className="px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-gray-100">
+              <Zap size={14} className="text-gray-500" />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium text-gray-800">Okta Scope</label>
+              <p className="text-xs text-gray-400 mb-2">
+                OAuth2 scope(s) to request when ECM OCR acquires a service JWT. Space-separated if multiple.
+                Required when your Okta authorization server has no default scope — otherwise Okta returns
+                <code className="font-mono">invalid_scope</code>. Create a custom scope on the Okta
+                authorization server and grant it to the ECM OCR Pipeline app, then paste the name here.
+              </p>
+              <input type="text" value={oktaScope}
+                onChange={e => { setOktaScope(e.target.value); setDirty(true) }}
+                placeholder="ecm.ocr"
                 autoComplete="off"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200" />
             </div>
@@ -513,6 +541,7 @@ function AiGatewayTab() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ─── Webhook (RAG push) — existing from Change 2 ─── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">

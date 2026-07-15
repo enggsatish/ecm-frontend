@@ -78,8 +78,59 @@ export const getDocument = (id) =>
   apiClient.get(`/api/documents/${id}`).then(r => r.data)
 
 /**
- * Soft-delete a document.
- * DELETE /api/documents/:id
+ * Soft-delete a document (admin only, requires reason).
+ * DELETE /api/documents/:id?reason=...
  */
-export const deleteDocument = (id) =>
-  apiClient.delete(`/api/documents/${id}`).then(r => r.data)
+export const deleteDocument = (id, reason) =>
+  apiClient.delete(`/api/documents/${id}`, { params: { reason } }).then(r => r.data)
+
+/** Move document to archive bucket. */
+export const archiveDocument = (id) =>
+  apiClient.post(`/api/documents/${id}/archive`).then(r => r.data)
+
+/** Restore archived document back to active. */
+export const restoreDocument = (id) =>
+  apiClient.post(`/api/documents/${id}/restore`).then(r => r.data)
+
+/** Check out (lock) document for exclusive review. */
+export const checkoutDocument = (id) =>
+  apiClient.post(`/api/documents/${id}/checkout`).then(r => r.data)
+
+/** Release document lock. */
+export const releaseDocument = (id) =>
+  apiClient.post(`/api/documents/${id}/release`).then(r => r.data)
+
+/** List documents needing classification. GET /api/documents?needsClassification=true */
+export const listNeedsClassification = (params = {}) =>
+  apiClient.get('/api/documents', { params: { ...params, needsClassification: true } })
+    .then(r => r.data ?? { content: [], totalPages: 0, totalElements: 0 })
+
+/** List auto-classified documents for spot check. GET /api/documents?autoClassified=true */
+export const listAutoClassified = (params = {}) =>
+  apiClient.get('/api/documents', { params: { ...params, autoClassified: true } })
+    .then(r => r.data ?? { content: [], totalPages: 0, totalElements: 0 })
+
+/** Classify a document — assign category and/or customer. PUT /api/documents/{id}/classify */
+export const classifyDocument = (id, data) =>
+  apiClient.put(`/api/documents/${id}/classify`, data).then(r => r.data)
+
+/** Approve auto-classification (spot check). POST /api/documents/{id}/approve-classification */
+export const approveClassification = (id) =>
+  apiClient.post(`/api/documents/${id}/approve-classification`).then(r => r.data)
+
+/** Flag auto-classification as incorrect. POST /api/documents/{id}/flag-classification */
+export const flagClassification = (id, reason) =>
+  apiClient.post(`/api/documents/${id}/flag-classification`, { reason }).then(r => r.data)
+
+/** Get version history for a document. */
+export const getVersionHistory = (id) =>
+  apiClient.get(`/api/documents/${id}/versions`).then(r => r.data?.data ?? r.data)
+
+/** Upload a new version of an existing document. */
+export const uploadNewVersion = (id, file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiClient.post(`/api/documents/${id}/versions`, formData, {
+    headers: { 'Content-Type': undefined },
+  }).then(r => r.data?.data ?? r.data)
+}

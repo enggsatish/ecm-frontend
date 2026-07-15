@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, X, SlidersHorizontal, ChevronDown, FileText, Loader2 } from 'lucide-react'
+import DOMPurify from 'dompurify'
 import { useDocumentSearch, useSearchSuggestions } from '../../hooks/useSearch'
 import { useCategories } from '../../hooks/useAdmin'
 import { downloadDocument } from '../../api/documentsApi'
@@ -47,7 +48,7 @@ function Snippet({ html }) {
     <p className="text-xs text-gray-500 mt-1 line-clamp-2"
       dangerouslySetInnerHTML={{
         // Strip <mark> tags and apply Tailwind highlight via replace
-        __html: html.replace(/<mark>/g, '<mark class="bg-yellow-100 text-yellow-800 rounded px-0.5">')
+        __html: DOMPurify.sanitize(html.replace(/<mark>/g, '<mark class="bg-yellow-100 text-yellow-800 rounded px-0.5">'), { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: ['class'] })
       }}
     />
   )
@@ -55,6 +56,7 @@ function Snippet({ html }) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
+// eslint-disable-next-line no-unused-vars
 export default function DocumentSearchPanel({ onClose }) {
   const [rawQ,       setRawQ]       = useState('')
   const [page,       setPage]       = useState(0)
@@ -85,6 +87,7 @@ export default function DocumentSearchPanel({ onClose }) {
   useEffect(() => { inputRef.current?.focus() }, [])
 
   // Reset page on filter/query change
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(0) }, [debouncedQ, activeCategories, activeStatuses, activeMimes])
 
   const toggleFilter = useCallback((arr, setArr, val) => {
@@ -257,8 +260,10 @@ export default function DocumentSearchPanel({ onClose }) {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate"
                 dangerouslySetInnerHTML={{
-                  __html: hit.highlightedName?.replace(/<mark>/g,
-                    '<mark class="bg-yellow-100 text-yellow-800 rounded px-0.5">') ?? hit.documentName
+                  __html: DOMPurify.sanitize(
+                    hit.highlightedName?.replace(/<mark>/g,
+                      '<mark class="bg-yellow-100 text-yellow-800 rounded px-0.5">') ?? hit.documentName,
+                    { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: ['class'] })
                 }}
               />
               <div className="flex items-center gap-2 mt-0.5">

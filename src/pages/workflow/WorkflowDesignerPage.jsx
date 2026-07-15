@@ -6,7 +6,7 @@
  * The visual designer (palette + canvas + properties) lives in BpmnDesignerCanvas.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, PlayCircle, Edit3, Archive, Clock, GitMerge, Eye, Copy, Trash2, Search, Link2,
@@ -14,12 +14,15 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
-  listTemplates, createTemplate, saveTemplateBpmn,
+  listTemplates, createTemplate, saveTemplateBpmn, updateTemplateDsl, getTemplateBpmnXml,
   publishTemplate, deprecateTemplate, cloneTemplate, updateTemplateMeta,
   deleteTemplate, listCategoryMappings, createCategoryMapping, deleteCategoryMapping,
 } from '../../api/workflowApi';
 import { getCategories } from '../../api/adminApi';
 import BpmnDesignerCanvas from '../../components/workflow/designer/BpmnDesignerCanvas';
+import FlowDesignerCanvas from '../../components/workflow/flow/FlowDesignerCanvas';
+import { flowToDsl, dslToFlow } from '../../components/workflow/flow/flowDslTranslator';
+import { validateFlow } from '../../components/workflow/flow/flowValidation';
 
 // ── Starter BPMN seeded into every new template ───────────────────────────
 const STARTER_BPMN = (processKey, processName) =>
@@ -219,6 +222,86 @@ function TemplateEditor({ template, onClose, onClone }) {
   const [editName, setEditName] = useState(template?.name || '');
   const [isEditingName, setIsEditingName] = useState(false);
   const isDraft = template?.status === 'DRAFT';
+  const isVisualSource = template?.bpmnSource === 'VISUAL';
+  // Designer mode: 'simple' (React Flow — default) or 'advanced' (bpmn-js).
+  // Published templates whose true source is a hand-built BPMN diagram (VISUAL)
+  // default straight to Advanced — Simple mode was never authoritative for them.
+  const [designerMode, setDesignerMode] = useState(!isDraft && isVisualSource ? 'advanced' : 'simple');
+  const [advancedBpmnXml, setAdvancedBpmnXml] = useState(null);
+
+  // When switching to Advanced, fetch latest BPMN preview from backend (generated from DSL).
+  // Skip this for VISUAL-sourced templates — their stored bpmnXml IS the source of
+  // truth, and overwriting it with a DSL-regenerated preview would show a diagram
+  // that was never actually deployed.
+  const switchToAdvanced = useCallback(async () => {
+    if (!isVisualSource) {
+      try {
+        const xml = await getTemplateBpmnXml(template.id);
+        if (xml && xml.trim().length > 50) {
+          setAdvancedBpmnXml(xml);
+        }
+      } catch { /* fallback to stored or starter */ }
+    }
+    setDesignerMode('advanced');
+  }, [template.id, isVisualSource]);
+
+  // ── Flow state: persists across mode switches ──────────────────────────────
+  // Compute initial flow from DSL, then keep latest nodes/edges in parent state
+  const initialFlowData = (() => {
+    try {
+      if (template?.dslDefinition) {
+        const dsl = typeof template.dslDefinition === 'string'
+          ? JSON.parse(template.dslDefinition) : template.dslDefinition;
+        if (dsl?.steps?.length > 0) return dslToFlow(dsl);
+      }
+    } catch { /* ignore */ }
+    return {
+      nodes: [
+        { id: 'start_1', type: 'start', position: { x: 50, y: 200 }, data: { label: 'Start' } },
+        { id: 'review_1', type: 'reviewTask', position: { x: 300, y: 175 }, data: { label: 'Review Document', assignedGroup: 'ECM_REVIEWER' } },
+        { id: 'decision_1', type: 'decision', position: { x: 550, y: 192 }, data: { label: 'Decision' } },
+        { id: 'end_approved', type: 'endApproved', position: { x: 780, y: 130 }, data: { label: 'Approved' } },
+        { id: 'end_rejected', type: 'endRejected', position: { x: 780, y: 270 }, data: { label: 'Rejected' } },
+      ],
+      edges: [
+        { id: 'e1', source: 'start_1', target: 'review_1' },
+        { id: 'e2', source: 'review_1', target: 'decision_1' },
+        { id: 'e3', source: 'decision_1', sourceHandle: 'default', target: 'end_approved', label: 'Approved', data: { label: 'Approved' } },
+        { id: 'e4', source: 'decision_1', sourceHandle: 'alt', target: 'end_rejected', label: 'Rejected', data: { label: 'Rejected' } },
+      ],
+    };
+  })();
+
+  // Track latest flow state in parent — survives mode toggle
+  const [flowNodes, setFlowNodes] = useState(initialFlowData.nodes);
+  const [flowEdges, setFlowEdges] = useState(initialFlowData.edges);
+
+  const handleFlowChange = useCallback((nodes, edges) => {
+    setFlowNodes(nodes);
+    setFlowEdges(edges);
+  }, []);
+
+  const handleFlowSave = async (nodes, edges) => {
+    const validation = validateFlow(nodes, edges);
+    if (!validation.valid) {
+      toast.error(validation.errors[0]);
+      return;
+    }
+    // Update parent state with latest
+    setFlowNodes(nodes);
+    setFlowEdges(edges);
+    try {
+      const dsl = flowToDsl(nodes, edges, {
+        processKey: template.processKey,
+        name: template.name,
+      });
+      await updateTemplateDsl(template.id, dsl);
+      toast.success('Workflow saved');
+      qc.invalidateQueries({ queryKey: ['wf-templates'] });
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'Save failed');
+    }
+  };
 
   const handleNameSave = async () => {
     if (!editName.trim() || editName.trim() === template?.name) {
@@ -309,6 +392,22 @@ function TemplateEditor({ template, onClose, onClone }) {
             </button>
           </>
         )}
+        {/* Mode toggle — editable in Draft, read-only view switch otherwise */}
+        <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+          <button onClick={() => setDesignerMode('simple')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              designerMode === 'simple' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            Simple
+          </button>
+          <button onClick={() => switchToAdvanced()}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              designerMode === 'advanced' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            Advanced
+          </button>
+        </div>
+
         {isDraft && (
           <button onClick={handlePublish} disabled={publishing}
             className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50">
@@ -326,13 +425,50 @@ function TemplateEditor({ template, onClose, onClone }) {
         </div>
       )}
 
-      {/* Designer canvas */}
+      {/* Source of truth banner */}
+      {isDraft && (
+        <div className="px-4 py-1.5 border-b border-gray-100 text-[10px] text-gray-400 flex items-center gap-2">
+          <Info size={10} />
+          {designerMode === 'simple'
+            ? 'Simple mode — saves as DSL. On publish, BPMN is auto-generated from this flow.'
+            : `Advanced mode — saves raw BPMN XML. Source: ${template?.bpmnSource === 'VISUAL' ? 'BPMN (last saved in Advanced)' : 'DSL (preview from Simple mode)'}`
+          }
+          <span className="ml-auto font-medium">Last save wins on publish.</span>
+        </div>
+      )}
+
+      {/* Designer canvas — Simple (React Flow) or Advanced (bpmn-js) */}
       <div className="flex-1 flex min-h-0">
-        <BpmnDesignerCanvas
-          templateId={template.id}
-          readOnly={!isDraft}
-          onSaved={() => qc.invalidateQueries({ queryKey: ['wf-templates'] })}
-        />
+        {designerMode === 'simple' ? (
+          flowNodes.length > 0 ? (
+            <FlowDesignerCanvas
+              key="flow-canvas"
+              initialNodes={flowNodes}
+              initialEdges={flowEdges}
+              onSave={isDraft ? handleFlowSave : undefined}
+              onChange={handleFlowChange}
+              readOnly={!isDraft}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 bg-gray-50">
+              <Info size={32} className="text-gray-300" />
+              <p className="text-sm font-medium text-gray-500">This workflow was created in Advanced mode</p>
+              <p className="text-xs text-gray-400">Switch to Advanced to view and edit the BPMN diagram</p>
+              <button onClick={() => switchToAdvanced()}
+                className="mt-2 px-4 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                Open in Advanced Mode
+              </button>
+            </div>
+          )
+        ) : (
+          <BpmnDesignerCanvas
+            key="bpmn-canvas"
+            templateId={template.id}
+            initialXml={advancedBpmnXml || template?.bpmnXml || STARTER_BPMN(template.processKey, template.name)}
+            readOnly={!isDraft}
+            onSaved={() => qc.invalidateQueries({ queryKey: ['wf-templates'] })}
+          />
+        )}
       </div>
     </div>
   );
@@ -617,6 +753,7 @@ export default function WorkflowDesignerPage() {
         {[
           { key: 'templates', label: 'Templates', icon: GitMerge },
           { key: 'mappings',  label: 'Category Mappings', icon: Link2 },
+        // eslint-disable-next-line no-unused-vars
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setPageTab(key)}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors

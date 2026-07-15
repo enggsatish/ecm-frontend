@@ -13,15 +13,18 @@
  *  6. Stray empty <th /> removed from header (was the 9th orphan header).
  *  7. Eye added to lucide-react imports.
  */
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  FileText, Download, Trash2, Search, RefreshCw, Eye,
+  FileText, Download, Trash2, Search, RefreshCw, Eye, Archive, RotateCcw, Lock, Unlock,
   ChevronUp, ChevronDown, ChevronsUpDown, AlertCircle, Loader2,
+  MoreVertical, FileSignature, Tag, X,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { listDocuments, downloadDocument, deleteDocument } from '../../api/documentsApi'
+import { listDocuments, downloadDocument, deleteDocument, archiveDocument, restoreDocument, checkoutDocument, releaseDocument, classifyDocument } from '../../api/documentsApi'
 import { listCustomers } from '../../api/adminApi'
+import ClassifyModal from './ClassifyModal'
+import useUserStore from '../../store/userStore'
 import DocumentViewerModal from './DocumentViewerModal'
 import toast from 'react-hot-toast'
 
@@ -32,8 +35,6 @@ import toast from 'react-hot-toast'
 
 function docName(doc)      { return doc.name ?? doc.originalFilename ?? doc.filename ?? '—' }
 function docMime(doc)      { return doc.mimeType ?? doc.contentType ?? '' }
-function docSize(doc)      { return doc.fileSizeBytes ?? doc.fileSize ?? doc.size }
-function docUploader(doc)  { return doc.uploadedBy ?? doc.createdBy }
 function docDate(doc)      { return doc.createdAt ?? doc.uploadedAt }
 
 // Sprint-C: builds the hierarchy breadcrumb from the three optional name fields.
@@ -50,13 +51,6 @@ function useDebounce(value, delayMs) {
     return () => clearTimeout(t)
   }, [value, delayMs])
   return debounced
-}
-
-function formatBytes(bytes) {
-  if (!bytes && bytes !== 0) return '—'
-  if (bytes < 1024)        return `${bytes} B`
-  if (bytes < 1024 ** 2)   return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
 }
 
 function formatDate(iso) {
@@ -85,22 +79,29 @@ function getTypeLabel(mimeType) {
   return { label: 'FILE', color: 'text-gray-500 bg-gray-100' }
 }
 
-function statusStyle(status) {
-  switch (status) {
-    case 'ACTIVE':       return 'bg-emerald-50 text-emerald-700'
-    case 'PENDING_OCR':  return 'bg-amber-50 text-amber-700'
-    case 'PROCESSING':   return 'bg-blue-50 text-blue-700'
-    case 'DELETED':      return 'bg-red-50 text-red-700'
-    default:             return 'bg-gray-100 text-gray-500'
-  }
+// Unified document status — single column showing full lifecycle state
+const STATUS_CONFIG = {
+  PENDING_OCR:           { label: 'Processing',           style: 'bg-blue-50 text-blue-700',       icon: '⏳' },
+  ACTIVE:                { label: 'Active',               style: 'bg-emerald-50 text-emerald-700', icon: '✓' },
+  PENDING_CLASSIFICATION:{ label: 'Needs Classification', style: 'bg-amber-50 text-amber-700',     icon: '!', clickable: true },
+  NEEDS_ASSIGNMENT:      { label: 'Needs Assignment',     style: 'bg-orange-50 text-orange-700',   icon: '!' },
+  NEEDS_CLASSIFICATION:  { label: 'Needs Classification', style: 'bg-amber-50 text-amber-700',     icon: '!', clickable: true },
+  OCR_FAILED:            { label: 'OCR Failed',           style: 'bg-red-50 text-red-600',         icon: '!' },
+  PENDING_SIGNATURE:     { label: 'Awaiting Signature',   style: 'bg-amber-50 text-amber-700',     icon: '✍' },
+  SIGNED:                { label: 'Signed',               style: 'bg-purple-50 text-purple-700',   icon: '✓' },
+  SIGN_DECLINED:         { label: 'Declined',             style: 'bg-red-50 text-red-600',         icon: '✗' },
+  ARCHIVED:              { label: 'Archived',             style: 'bg-gray-100 text-gray-500',      icon: '▪' },
+  DELETED:               { label: 'Deleted',              style: 'bg-red-50 text-red-500',         icon: '✗' },
+  PURGED:                { label: 'Purged',               style: 'bg-gray-200 text-gray-400',      icon: '—' },
 }
 
-// Sprint-D: OCR completion status derived from document.status
-const OCR_STATUS = {
-  PENDING_OCR: { label: 'Pending',  style: 'bg-amber-50 text-amber-600' },
-  ACTIVE:      { label: 'Done',     style: 'bg-emerald-50 text-emerald-600' },
-  OCR_FAILED:  { label: 'Failed',   style: 'bg-red-50 text-red-500' },
-  ARCHIVED:    { label: 'Archived', style: 'bg-gray-100 text-gray-500' },
+/** Derives visual status from DB status + classification state */
+function getStatusConfig(doc) {
+  const status = typeof doc === 'string' ? doc : doc?.status
+  const categoryId = typeof doc === 'string' ? undefined : doc?.categoryId
+  // ACTIVE + no category = needs classification
+  if (status === 'ACTIVE' && !categoryId) return STATUS_CONFIG.NEEDS_CLASSIFICATION
+  return STATUS_CONFIG[status] || { label: status || '—', style: 'bg-gray-100 text-gray-500', icon: '' }
 }
 
 // ── Sub-components ────────────────────────────────────────────
@@ -122,16 +123,32 @@ function SortButton({ field, label, sort, onSort }) {
   )
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function CustomerLink({ externalId }) {
   const navigate = useNavigate()
-  const { data } = useQuery({
+  const isUuid = UUID_RE.test(externalId)
+
+  // Search by customerRef (normal path)
+  const { data: searchData } = useQuery({
     queryKey: ['customer-by-ref', externalId],
     queryFn: () => listCustomers({ q: externalId, size: 1 }),
     staleTime: 10 * 60_000,
-    enabled: !!externalId,
+    enabled: !!externalId && !isUuid,
   })
-  const customers = Array.isArray(data) ? data : (data?.content ?? [])
-  const customer = customers.find(c => c.customerRef === externalId || c.externalId === externalId)
+
+  // Lookup by UUID (fallback for legacy data where partyExternalId was set to party UUID)
+  const { data: uuidData } = useQuery({
+    queryKey: ['customer-by-id', externalId],
+    queryFn: () => import('../../api/adminApi').then(m => m.getCustomer(externalId)),
+    staleTime: 10 * 60_000,
+    enabled: !!externalId && isUuid,
+  })
+
+  const searchCustomers = Array.isArray(searchData) ? searchData : (searchData?.content ?? [])
+  const customer = isUuid
+    ? uuidData ?? null
+    : searchCustomers.find(c => c.customerRef === externalId || c.externalId === externalId)
 
   if (customer) {
     return (
@@ -150,44 +167,130 @@ function CustomerLink({ externalId }) {
   )
 }
 
-function DeleteButton({ doc, onDelete }) {
-  const [confirm, setConfirm] = useState(false)
-  if (confirm) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs">
-        <span className="text-red-600 font-medium">Delete?</span>
-        <button
-          onClick={() => { onDelete(doc.id); setConfirm(false) }}
-          className="rounded px-1.5 py-0.5 bg-red-600 text-white
-                     hover:bg-red-700 transition-colors"
-        >Yes</button>
-        <button
-          onClick={() => setConfirm(false)}
-          className="rounded px-1.5 py-0.5 bg-gray-100 text-gray-600
-                     hover:bg-gray-200 transition-colors"
-        >No</button>
-      </span>
-    )
+function DocActionMenu({ doc, onArchive, onRestore, onDelete, onCheckout, onRelease, isAdmin, currentUserEmail }) {
+  const [open, setOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+  const btnRef = useRef(null)
+  const menuRef = useRef(null)
+
+  const status = doc.status
+  const isLocked = doc.lockedBy && doc.lockExpiresAt && new Date(doc.lockExpiresAt) > new Date()
+  const isLockedByMe = isLocked && doc.lockedBy === currentUserEmail
+  const isLockedByOther = isLocked && !isLockedByMe
+
+  // Close on outside click or scroll
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)
+          && btnRef.current && !btnRef.current.contains(e.target)) setOpen(false)
+    }
+    const scrollHandler = () => setOpen(false)
+    document.addEventListener('mousedown', handler)
+    document.addEventListener('scroll', scrollHandler, true)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('scroll', scrollHandler, true)
+    }
+  }, [open])
+
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setMenuPos({ top: rect.bottom + 4, left: rect.right - 192 }) // 192 = w-48
+    }
+    setOpen(v => !v)
   }
+
+  // No menu for deleted/purged
+  if (status === 'DELETED' || status === 'PURGED') return null
+
   return (
-    <button
-      onClick={() => setConfirm(true)}
-      className="text-gray-300 hover:text-red-500 transition-colors"
-      aria-label="Delete"
-    >
-      <Trash2 size={15} />
-    </button>
+    <>
+      <button ref={btnRef} onClick={handleToggle}
+        className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+        aria-label="More actions">
+        <MoreVertical size={16} />
+      </button>
+
+      {open && (
+        <div ref={menuRef}
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, zIndex: 9999 }}
+          className="w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          {/* Lock / Unlock */}
+          {status !== 'ARCHIVED' && (
+            <>
+              {!isLocked && (
+                <button onClick={() => { setOpen(false); onCheckout(doc.id) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left text-gray-700 hover:bg-blue-50 hover:text-blue-700">
+                  <Lock size={13} /> Lock Document
+                </button>
+              )}
+              {isLockedByMe && (
+                <button onClick={() => { setOpen(false); onRelease(doc.id) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left text-blue-600 hover:bg-blue-50">
+                  <Unlock size={13} /> Unlock Document
+                </button>
+              )}
+              {isLockedByOther && (
+                <div className="px-3 py-2 text-xs text-gray-400 flex items-center gap-2">
+                  <Lock size={13} /> Locked by {doc.lockedBy?.split('@')[0]}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Archive / Restore */}
+          {isAdmin && status === 'ARCHIVED' && (
+            <button onClick={() => { setOpen(false); onRestore(doc.id) }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left text-green-700 hover:bg-green-50">
+              <RotateCcw size={13} /> Restore from Archive
+            </button>
+          )}
+          {isAdmin && status !== 'ARCHIVED' && !isLockedByOther && (
+            <button onClick={() => {
+              setOpen(false)
+              if (window.confirm('Archive this document? It will be moved to cold storage.')) onArchive(doc.id)
+            }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left text-amber-700 hover:bg-amber-50">
+              <Archive size={13} /> Archive
+            </button>
+          )}
+
+          {/* Divider before destructive action */}
+          {isAdmin && status !== 'ARCHIVED' && !isLockedByOther && (
+            <div className="border-t border-gray-100 my-1" />
+          )}
+
+          {/* Delete */}
+          {isAdmin && status !== 'ARCHIVED' && !isLockedByOther && (
+            <button onClick={() => {
+              setOpen(false)
+              const reason = window.prompt('Reason for deletion (required):')
+              if (reason && reason.trim()) onDelete({ id: doc.id, reason: reason.trim() })
+            }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left text-red-600 hover:bg-red-50">
+              <Trash2 size={13} /> Delete
+            </button>
+          )}
+        </div>
+      )}
+    </>
   )
 }
 
 // ── Main component ────────────────────────────────────────────
 
-// Column count: Name | Size | Uploaded By | Date | Status | Location | OCR | Actions = 8
-const COL_SPAN = 9
+// Column count: Name | Size | Uploaded By | Date | Status | Customer | Location | Actions = 8
+const COL_SPAN = 4
 const PAGE_SIZE = 20
 
 export default function DocumentTable({ customerFilter = '' }) {
   const qc = useQueryClient()
+  const { user } = useUserStore()
+  const isAdmin = user?.roles?.some(r =>
+    r === 'ECM_ADMIN' || r === 'ECM_SUPER_ADMIN' || r === 'ROLE_ECM_ADMIN' || r === 'ROLE_ECM_SUPER_ADMIN'
+  ) ?? false
   const [search, setSearch]     = useState('')
   const debouncedSearch         = useDebounce(search, 350)
   const [page,   setPage]       = useState(0)
@@ -197,6 +300,7 @@ export default function DocumentTable({ customerFilter = '' }) {
   const [viewingId, setViewingId] = useState(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(0)
   }, [debouncedSearch, customerFilter])
 
@@ -240,13 +344,61 @@ export default function DocumentTable({ customerFilter = '' }) {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => deleteDocument(id),
+    mutationFn: ({ id, reason }) => deleteDocument(id, reason),
     onSuccess: () => {
       toast.success('Document deleted')
       qc.invalidateQueries({ queryKey: ['documents'] })
     },
     onError: (err) => toast.error(`Delete failed: ${err.message}`),
   })
+
+  const archiveMutation = useMutation({
+    mutationFn: (id) => archiveDocument(id),
+    onSuccess: () => {
+      toast.success('Document archived')
+      qc.invalidateQueries({ queryKey: ['documents'] })
+    },
+    onError: (err) => toast.error(`Archive failed: ${err.message}`),
+  })
+
+  const restoreMutation = useMutation({
+    mutationFn: (id) => restoreDocument(id),
+    onSuccess: () => {
+      toast.success('Document restored')
+      qc.invalidateQueries({ queryKey: ['documents'] })
+    },
+    onError: (err) => toast.error(`Restore failed: ${err.message}`),
+  })
+
+  const checkoutMutation = useMutation({
+    mutationFn: (id) => checkoutDocument(id),
+    onSuccess: () => {
+      toast.success('Document checked out')
+      qc.invalidateQueries({ queryKey: ['documents'] })
+    },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const releaseMutation = useMutation({
+    mutationFn: (id) => releaseDocument(id),
+    onSuccess: () => {
+      toast.success('Document released')
+      qc.invalidateQueries({ queryKey: ['documents'] })
+    },
+    onError: (err) => toast.error(err.message),
+  })
+
+  const classifyMutation = useMutation({
+    mutationFn: ({ id, data }) => classifyDocument(id, data),
+    onSuccess: () => {
+      toast.success('Document classified')
+      qc.invalidateQueries({ queryKey: ['documents'] })
+      setClassifyingDocId(null)
+    },
+    onError: (err) => toast.error(`Classify failed: ${err.message}`),
+  })
+
+  const [classifyingDocId, setClassifyingDocId] = useState(null)
 
   // ── Table body ────────────────────────────────────────────────
 
@@ -315,8 +467,7 @@ export default function DocumentTable({ customerFilter = '' }) {
       const name     = docName(doc)
       const location = docLocation(doc)
 
-      // Sprint-D: resolve OCR badge from status; fall back to a neutral style
-      const ocrEntry = OCR_STATUS[doc.status]
+      const sc = getStatusConfig(doc)
 
       return (
         <tr
@@ -324,44 +475,50 @@ export default function DocumentTable({ customerFilter = '' }) {
           className="group border-t border-gray-50
                      hover:bg-gray-50/70 transition-colors"
         >
-          {/* Name + type badge */}
-          <td className="py-3 px-4">
-            <div className="flex items-center gap-2.5">
-              <span className={`shrink-0 rounded px-1.5 py-0.5
+          {/* Name + date + location subtitle */}
+          <td className="py-2.5 px-4">
+            <div className="flex items-start gap-2.5">
+              <span className={`shrink-0 rounded px-1.5 py-0.5 mt-0.5
                                text-[10px] font-bold tracking-wider ${color}`}>
                 {label}
               </span>
-              <span
-                className="text-sm text-gray-800 font-medium truncate max-w-xs"
-                title={name}
-              >
-                {name}
-              </span>
+              <div className="min-w-0">
+                <span
+                  className="text-sm text-gray-800 font-medium truncate block max-w-sm"
+                  title={name}
+                >
+                  {name}
+                </span>
+                <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-gray-400">
+                  <span className="tabular-nums">{formatDate(docDate(doc))}</span>
+                  {location && (
+                    <>
+                      <span className="text-gray-300">·</span>
+                      <span className="truncate max-w-[200px]" title={location}>{location}</span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </td>
 
-          {/* Size */}
-          <td className="py-3 px-4 text-sm text-gray-500 tabular-nums">
-            {formatBytes(docSize(doc))}
-          </td>
-
-          {/* Uploaded by */}
-          <td className="py-3 px-4 text-sm text-gray-500">
-            {docUploader(doc) ?? '—'}
-          </td>
-
-          {/* Date */}
-          <td className="py-3 px-4 text-sm text-gray-500
-                         tabular-nums whitespace-nowrap">
-            {formatDate(docDate(doc))}
-          </td>
-
-          {/* Status */}
+          {/* Status — unified lifecycle column */}
           <td className="py-3 px-4">
-            {doc.status && (
-              <span className={`rounded-full px-2 py-0.5 text-xs
-                               font-medium ${statusStyle(doc.status)}`}>
-                {doc.status}
+            {sc.clickable ? (
+              <button
+                onClick={() => setClassifyingDocId(classifyingDocId === doc.id ? null : doc.id)}
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5
+                           text-xs font-medium whitespace-nowrap cursor-pointer
+                           hover:ring-2 hover:ring-amber-300 transition-all ${sc.style}`}
+                title="Click to classify this document"
+              >
+                <Tag size={10} />
+                {sc.label}
+              </button>
+            ) : (
+              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5
+                               text-xs font-medium whitespace-nowrap ${sc.style}`}>
+                {sc.label}
               </span>
             )}
           </td>
@@ -375,57 +532,64 @@ export default function DocumentTable({ customerFilter = '' }) {
             )}
           </td>
 
-          {/* Location breadcrumb (Sprint-C) */}
+          {/* Actions — always visible */}
           <td className="py-3 px-4">
-            {location ? (
-              <span
-                className="text-xs text-gray-400 whitespace-nowrap"
-                title={location}
-              >
-                {location}
-              </span>
-            ) : (
-              <span className="text-xs text-gray-300">—</span>
-            )}
-          </td>
+            <div className="flex items-center justify-end gap-1.5">
+              {/* Lock state badge — always visible when locked */}
+              {doc.lockedBy && doc.lockExpiresAt && new Date(doc.lockExpiresAt) > new Date() && (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium
+                  ${doc.lockedBy === user?.email
+                    ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                    : 'bg-amber-50 text-amber-600 border border-amber-200'}`}
+                  title={`Locked by ${doc.lockedBy} until ${new Date(doc.lockExpiresAt).toLocaleTimeString()}`}>
+                  <Lock size={9} />
+                  {doc.lockedBy === user?.email ? 'You' : doc.lockedBy?.split('@')[0]}
+                </span>
+              )}
 
-          {/* OCR status badge (Sprint-D) */}
-          <td className="py-3 px-4">
-            {ocrEntry ? (
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ocrEntry.style}`}>
-                {ocrEntry.label}
-              </span>
-            ) : (
-              <span className="text-xs text-gray-300">—</span>
-            )}
-          </td>
+              {/* Case linkage badge — shows who is working on it */}
+              {doc.linkedCaseId && (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border
+                  ${doc.linkedCaseAssignee
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'bg-cyan-50 text-cyan-600 border-cyan-200'}`}
+                  title={`Linked to active case${doc.linkedCaseAssignee ? ' — ' + doc.linkedCaseAssignee : ''}`}>
+                  {doc.linkedCaseAssignee
+                    ? `Case: ${doc.linkedCaseAssignee.split('@')[0]}`
+                    : 'In Case'}
+                </span>
+              )}
 
-          {/* Actions */}
-          <td className="py-3 px-4">
-            <div className="flex items-center justify-end gap-2
-                            opacity-0 group-hover:opacity-100
-                            transition-opacity">
-              {/* Sprint-D: View button — opens DocumentViewerModal */}
+              {/* View — always visible */}
               <button
                 onClick={() => setViewingId(doc.id)}
-                className="text-gray-300 hover:text-blue-500
-                           transition-colors"
-                aria-label="View"
+                className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600 transition-colors"
+                title="View document"
               >
                 <Eye size={15} />
               </button>
+
+              {/* Download — always visible */}
               <button
                 onClick={() => downloadMutation.mutate({ id: doc.id, name })}
                 disabled={downloadMutation.isPending}
-                className="text-gray-300 hover:text-blue-500
+                className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600
                            transition-colors disabled:opacity-40"
-                aria-label="Download"
+                title="Download"
               >
                 <Download size={15} />
               </button>
-              <DeleteButton
+
+              {/* Three-dot menu — all other actions */}
+              <DocActionMenu
                 doc={doc}
-                onDelete={(id) => deleteMutation.mutate(id)}
+                isAdmin={isAdmin}
+                currentUserEmail={user?.email}
+                onArchive={(id) => archiveMutation.mutate(id)}
+                onRestore={(id) => restoreMutation.mutate(id)}
+                onDelete={({ id, reason }) => deleteMutation.mutate({ id, reason })}
+                onCheckout={(id) => checkoutMutation.mutate(id)}
+                onRelease={(id) => releaseMutation.mutate(id)}
               />
             </div>
           </td>
@@ -475,28 +639,13 @@ export default function DocumentTable({ customerFilter = '' }) {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-100 bg-white
-                      shadow-sm overflow-hidden">
+      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px]">
             <thead>
               <tr className="bg-gray-50/80 border-b border-gray-100">
                 <th className="py-3 px-4 text-left">
-                  <SortButton field="name" label="Name"
-                              sort={sort} onSort={handleSort} />
-                </th>
-                <th className="py-3 px-4 text-left">
-                  <SortButton field="fileSizeBytes" label="Size"
-                              sort={sort} onSort={handleSort} />
-                </th>
-                <th className="py-3 px-4 text-left">
-                  <span className="text-xs uppercase tracking-wide
-                                   font-semibold text-gray-500">
-                    Uploaded by
-                  </span>
-                </th>
-                <th className="py-3 px-4 text-left">
-                  <SortButton field="createdAt" label="Date"
+                  <SortButton field="name" label="Document"
                               sort={sort} onSort={handleSort} />
                 </th>
                 <th className="py-3 px-4 text-left">
@@ -511,21 +660,6 @@ export default function DocumentTable({ customerFilter = '' }) {
                     Customer
                   </span>
                 </th>
-                {/* Sprint-C: hierarchy breadcrumb column */}
-                <th className="py-3 px-4 text-left">
-                  <span className="text-xs uppercase tracking-wide
-                                   font-semibold text-gray-500">
-                    Location
-                  </span>
-                </th>
-                {/* Sprint-D: OCR completion status */}
-                <th className="py-3 px-4 text-left">
-                  <span className="text-xs uppercase tracking-wide
-                                   font-semibold text-gray-500">
-                    OCR
-                  </span>
-                </th>
-                {/* Actions — no header label, right-aligned */}
                 <th className="py-3 px-4" />
               </tr>
             </thead>
@@ -565,6 +699,16 @@ export default function DocumentTable({ customerFilter = '' }) {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Classify modal */}
+      {classifyingDocId && (
+        <ClassifyModal
+          documentName={docName(documents.find(d => d.id === classifyingDocId) ?? {})}
+          onSubmit={(data) => classifyMutation.mutate({ id: classifyingDocId, data })}
+          onCancel={() => setClassifyingDocId(null)}
+          isPending={classifyMutation.isPending}
+        />
       )}
 
       {/* Sprint-D: Document viewer modal — rendered outside the table so it

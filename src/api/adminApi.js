@@ -391,6 +391,11 @@ export const getEmailTemplate = (id) =>
 export const updateEmailTemplate = (id, payload) =>
   api.put(`/api/notifications/email-templates/${id}`, payload).then(unwrap);
 
+/** Any authenticated user (not admin-gated) — used by the eForms fill flow
+ *  to show the DocuSign signing-request default subject/body. */
+export const getEmailTemplateByKey = (key) =>
+  api.get(`/api/notifications/email-templates/by-key/${key}`).then(unwrap);
+
 /** GET /api/admin/permissions — list all 24 permissions grouped by module */
 export const getPermissions = () =>
   api.get('/api/admin/permissions').then(unwrap);

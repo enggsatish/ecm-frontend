@@ -213,6 +213,7 @@ const ENROLL_STATUS_COLORS = {
   CANCELLED: 'bg-gray-100 text-gray-500 border-gray-200',
 }
 
+// eslint-disable-next-line no-unused-vars
 function EnrollmentsSection({ customer, onRefresh }) {
   const navigate = useNavigate()
   const enrollments = customer?.enrollments ?? []
@@ -312,7 +313,7 @@ export default function CustomerPortfolioPage() {
   const [viewingDocId, setViewingDocId] = useState(null)
 
   const customer = portfolio?.customer
-  const cases = portfolio?.cases ?? []
+  const cases = useMemo(() => portfolio?.cases ?? [], [portfolio?.cases])
   const uncategorized = portfolio?.uncategorizedDocuments ?? []
 
   const activeCases = useMemo(() =>

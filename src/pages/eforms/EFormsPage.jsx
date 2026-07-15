@@ -6,8 +6,10 @@
  */
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PenLine, FileCheck, ClipboardList, Eye, ArrowRight, Loader2, Search } from 'lucide-react';
+import { PenLine, FileCheck, ClipboardList, Eye, ArrowRight, Loader2, Search, Download } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { usePublishedForms } from '../../hooks/useEForms';
+import { downloadBlankFormPdf } from '../../api/eformsApi';
 import useUserStore from '../../store/userStore';
 
 const ROLE_ACTIONS = {
@@ -45,6 +47,18 @@ export default function EFormsPage() {
   const { data: rawForms, isLoading } = usePublishedForms();
   const [search, setSearch] = useState('');
   const [selectedTag, setSelectedTag] = useState(null);
+  const [downloadingKey, setDownloadingKey] = useState(null);
+
+  const handleDownloadBlank = async (formKey) => {
+    setDownloadingKey(formKey);
+    try {
+      await downloadBlankFormPdf(formKey);
+    } catch {
+      toast.error('Download failed');
+    } finally {
+      setDownloadingKey(null);
+    }
+  };
 
   const publishedForms = Array.isArray(rawForms) ? rawForms : [];
 
@@ -81,6 +95,7 @@ export default function EFormsPage() {
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* eslint-disable-next-line no-unused-vars */}
         {quickActions.map(({ label, desc, icon: Icon, to, color }) => (
           <button
             key={to}
@@ -167,7 +182,7 @@ export default function EFormsPage() {
                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Form</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Key</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Tags</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-28"></th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-48"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -198,11 +213,22 @@ export default function EFormsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/eforms/fill/${form.formKey}`); }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
-                      <Eye className="w-3.5 h-3.5" /> Fill Form
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/eforms/fill/${form.formKey}`); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+                        <Eye className="w-3.5 h-3.5" /> Fill Form
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDownloadBlank(form.formKey); }}
+                        disabled={downloadingKey === form.formKey}
+                        title="Download a blank copy to print and fill by hand"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50">
+                        {downloadingKey === form.formKey
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Download className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

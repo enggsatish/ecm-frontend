@@ -17,12 +17,14 @@ import { useNavigate } from 'react-router-dom'
 import {
   Plus, FolderOpen, User, Package, CheckCircle, XCircle, Clock, Search,
   FileText, ChevronRight, Loader2, X, AlertCircle, Check, Ban, Trash2,
-  Upload, Eye, Link2, PenLine, ShieldAlert, History, MessageSquare,
+  Upload, Eye, Link2, PenLine, ShieldAlert, History, MessageSquare, FileSignature,
+  Play, Lock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   listCases, getCase, createCase, updateCaseStatus, linkCaseDocument, waiveCaseItem,
-  addCaseNote, cancelCase, deleteCase, getProducts, listCustomers,
+  addCaseNote, cancelCase, deleteCase, getProducts, listCustomers, sendForSignature,
+  addChecklistItem, startChecklistWorkflow, completeChecklistItem, reopenChecklistItem,
 } from '../../api/adminApi'
 import { uploadDocuments, listDocuments } from '../../api/documentsApi'
 import useUserStore from '../../store/userStore'
@@ -31,6 +33,7 @@ import WorkflowStatusBadge from '../../components/cases/WorkflowStatusBadge'
 import CaseTimeline from '../../components/cases/CaseTimeline'
 import OverrideRequestModal from '../../components/cases/OverrideRequestModal'
 import OverrideReviewPanel from '../../components/cases/OverrideReviewPanel'
+import DocumentViewerModal from '../../components/documents/DocumentViewerModal'
 import {
   useRequestOverride, useAdminBypassItem,
 } from '../../hooks/useAdmin'
@@ -53,12 +56,14 @@ const STATUS_COLORS = {
 }
 
 const CHECKLIST_STATUS_COLORS = {
-  PENDING:      'bg-gray-100 text-gray-500',
-  UPLOADED:     'bg-blue-50 text-blue-600',
-  UNDER_REVIEW: 'bg-amber-50 text-amber-600',
-  APPROVED:     'bg-green-50 text-green-600',
-  REJECTED:     'bg-red-50 text-red-500',
-  WAIVED:       'bg-gray-100 text-gray-400',
+  PENDING:            'bg-gray-100 text-gray-500',
+  UPLOADED:           'bg-blue-50 text-blue-600',
+  UNDER_REVIEW:       'bg-amber-50 text-amber-600',
+  PENDING_SIGNATURE:  'bg-purple-50 text-purple-600',
+  SIGNED:             'bg-teal-50 text-teal-600',
+  APPROVED:           'bg-green-50 text-green-600',
+  REJECTED:           'bg-red-50 text-red-500',
+  WAIVED:             'bg-gray-100 text-gray-400',
 }
 
 const OVERRIDE_STATUS_COLORS = {
@@ -240,14 +245,15 @@ function CreateCaseModal({ onClose }) {
 }
 
 // ── Checklist Item Row ────────────────────────────────────────────────────────
-export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, onWaive, isAdmin, onViewDocument }) {
+export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, onWaive, isAdmin, onViewDocument, onViewWorkflow }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [showLinkPicker, setShowLinkPicker] = useState(false)
   const [showOverrideModal, setShowOverrideModal] = useState(false)
-
+  const [showSignModal, setShowSignModal] = useState(false)
+  const [signPending, setSignPending] = useState(false)
 
   const requestOverrideMut = useRequestOverride()
   const adminBypassMut = useAdminBypassItem()
@@ -323,16 +329,21 @@ export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, on
   const hasDoc = !!item.documentId
   const isEform = item.sourceType === 'EFORM'
   const isCaseClosed = ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(caseStatus)
-  const canAct = isPending && !isCaseClosed
+  const isCaseStarted = !['NEW'].includes(caseStatus) && !isCaseClosed
+  const canAct = isPending && isCaseStarted
   const hasActiveWorkflow = !!item.workflowInstanceId && item.workflowStatus === 'ACTIVE'
+  const isLocked = item.status === 'PENDING_SIGNATURE' || hasActiveWorkflow
+
+  const isCompleted = item.status === 'APPROVED' || item.status === 'WAIVED'
 
   return (
-    <div className="rounded-lg border border-gray-200 p-3">
+    <div className={`rounded-lg border p-3 ${isCompleted ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between gap-2">
         {/* Left: item info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-gray-800">{item.documentTypeName}</p>
+            {isCompleted && <CheckCircle size={14} className="text-green-500 shrink-0" />}
+            <p className={`text-sm font-medium ${isCompleted ? 'text-gray-500' : 'text-gray-800'}`}>{item.documentTypeName}</p>
             {item.isRequired && (
               <span className="text-[10px] text-red-500 font-medium bg-red-50 px-1.5 py-0.5 rounded">Required</span>
             )}
@@ -355,14 +366,20 @@ export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, on
             )}
           </div>
 
-          {/* Workflow status badge */}
+          {/* Workflow status badge + view flow button */}
           {item.workflowInstanceId && (
-            <div className="mt-1.5">
+            <div className="mt-1.5 flex items-center gap-2">
               <WorkflowStatusBadge
                 workflowStatus={item.workflowStatus}
                 currentTaskName={item.currentTaskName}
                 currentTaskAssignee={item.currentTaskAssignee}
               />
+              {onViewWorkflow && (
+                <button onClick={() => onViewWorkflow(item.workflowInstanceId)}
+                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium hover:underline cursor-pointer">
+                  View Flow
+                </button>
+              )}
             </div>
           )}
 
@@ -386,7 +403,7 @@ export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, on
             </div>
           )}
 
-          {/* PENDING UPLOAD type — Upload button + Link Existing */}
+          {/* ── PENDING: Upload / Fill Form ── */}
           {canAct && !isEform && (
             <>
               <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload}
@@ -403,7 +420,6 @@ export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, on
             </>
           )}
 
-          {/* PENDING EFORM type — Fill Form link with case context */}
           {canAct && isEform && (
             <button onClick={() => {
               const params = new URLSearchParams()
@@ -419,21 +435,64 @@ export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, on
             </button>
           )}
 
-          {/* Override / Bypass button */}
-          {canAct && !item.overrideStatus && (
-            <button onClick={() => setShowOverrideModal(true)}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100"
-              title={isAdmin ? 'Bypass requirement' : 'Request override'}>
-              <ShieldAlert size={11} /> {isAdmin ? 'Bypass' : 'Override'}
-            </button>
+          {/* ── UPLOADED: Decision Menu — what to do next ── */}
+          {hasDoc && isCaseStarted && !isLocked && item.status !== 'APPROVED' && item.status !== 'WAIVED' && (
+            <ItemActionMenu
+              item={item}
+              caseId={caseId}
+              isAdmin={isAdmin}
+              onSendForSignature={() => setShowSignModal(true)}
+              onStartWorkflow={() => {
+                startChecklistWorkflow(caseId, item.id)
+                  .then(() => { toast.success('Workflow started'); qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }) })
+                  .catch(e => toast.error(e?.response?.data?.message || e.message || 'Failed to start workflow'))
+              }}
+              onMarkComplete={() => {
+                completeChecklistItem(caseId, item.id)
+                  .then(() => { toast.success('Marked complete'); qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }) })
+                  .catch(e => toast.error(e?.response?.data?.message || 'Failed'))
+              }}
+              onOverride={() => setShowOverrideModal(true)}
+              onWaive={onWaive}
+            />
           )}
 
-          {/* Waive button */}
-          {canAct && (
-            <button onClick={() => { if (confirm('Waive this requirement?')) onWaive() }}
-              className="p-1 text-gray-400 hover:text-orange-500" title="Waive requirement">
-              <Ban size={12} />
-            </button>
+          {/* ── Status indicators ── */}
+          {item.status === 'SIGNED' && (
+            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle size={10} /> Signed
+            </span>
+          )}
+
+          {item.status === 'APPROVED' && isCaseStarted && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-green-600 font-medium">Completed</span>
+              {item.reviewedBy && (
+                <span className="text-[9px] text-gray-400">by {item.reviewedBy?.split('@')[0]}</span>
+              )}
+              <button onClick={() => {
+                reopenChecklistItem(caseId, item.id)
+                  .then(() => { toast.success('Item reopened'); qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] }) })
+                  .catch(e => toast.error(e?.response?.data?.message || 'Failed'))
+              }}
+                className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                title="Reopen for re-review">
+                Reopen
+              </button>
+            </div>
+          )}
+
+          {/* Lock indicator — under signature or workflow */}
+          {isLocked && (
+            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-lg">
+              {item.status === 'PENDING_SIGNATURE' ? <><FileSignature size={10} /> Awaiting Signature</> :
+               hasActiveWorkflow ? <><Clock size={10} /> Under Review</> : null}
+            </span>
+          )}
+
+          {/* Case not started — prompt to start working */}
+          {isPending && caseStatus === 'NEW' && (
+            <span className="text-[10px] text-gray-400 italic">Start working to enable actions</span>
           )}
 
           {/* Locked indicator for closed cases */}
@@ -480,6 +539,28 @@ export function ChecklistItemRow({ item, caseId, caseStatus, partyExternalId, on
           onClose={() => setShowOverrideModal(false)}
         />
       )}
+
+      {/* Send for Signature modal */}
+      {showSignModal && (
+        <SendForSignatureModal
+          docName={item.documentName || item.documentTypeName}
+          isPending={signPending}
+          onClose={() => setShowSignModal(false)}
+          onSubmit={async (payload) => {
+            setSignPending(true)
+            try {
+              await sendForSignature(caseId, item.id, payload)
+              toast.success('Sent for signature')
+              qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] })
+              setShowSignModal(false)
+            } catch (e) {
+              toast.error(e?.response?.data?.message || e.message || 'Failed to send for signature')
+            } finally {
+              setSignPending(false)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -515,6 +596,303 @@ function ChecklistProgressBar({ checklist }) {
   )
 }
 
+// ── Send for Signature Modal ──────────────────────────────────────────────────
+function SendForSignatureModal({ docName, onSubmit, onClose, isPending }) {
+  const [signerEmail, setSignerEmail] = useState('')
+  const [signerName, setSignerName] = useState('')
+  const [placement, setPlacement] = useState('lastPage')
+  const [sigPage, setSigPage] = useState('1')
+  const [sigX, setSigX] = useState('100')
+  const [sigY, setSigY] = useState('700')
+  const [requireInitials, setRequireInitials] = useState(false)
+  const [requireDateSigned, setRequireDateSigned] = useState(false)
+  const [emailSubject, setEmailSubject] = useState(`Please sign: ${docName || 'Document'}`)
+
+  const canSubmit = signerEmail.trim().includes('@') && signerName.trim()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 bg-purple-50 border-b border-purple-100">
+          <h3 className="text-sm font-semibold text-purple-800 flex items-center gap-2">
+            <FileSignature size={16} /> Send for Signature
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Signer info */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Signer Email *</label>
+              <input value={signerEmail} onChange={e => setSignerEmail(e.target.value)}
+                placeholder="signer@company.com" type="email"
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-purple-400 focus:border-purple-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Signer Name *</label>
+              <input value={signerName} onChange={e => setSignerName(e.target.value)}
+                placeholder="John Smith"
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-purple-400 focus:border-purple-400" />
+            </div>
+          </div>
+
+          {/* Signature Placement */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Signature Placement</label>
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                <input type="radio" name="placement" value="auto" checked={placement === 'auto'}
+                  onChange={e => setPlacement(e.target.value)} className="text-purple-600" />
+                Auto-detect <span className="text-gray-400">(use anchor markers if present in PDF)</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                <input type="radio" name="placement" value="lastPage" checked={placement === 'lastPage'}
+                  onChange={e => setPlacement(e.target.value)} className="text-purple-600" />
+                Last page, bottom <span className="text-gray-400">(default — works for most documents)</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                <input type="radio" name="placement" value="specific" checked={placement === 'specific'}
+                  onChange={e => setPlacement(e.target.value)} className="text-purple-600" />
+                Specific position
+              </label>
+            </div>
+
+            {placement === 'specific' && (
+              <div className="grid grid-cols-3 gap-2 mt-2 ml-5">
+                <div>
+                  <label className="text-[10px] text-gray-500">Page</label>
+                  <input value={sigPage} onChange={e => setSigPage(e.target.value)}
+                    className="w-full text-xs border border-gray-300 rounded px-2 py-1" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500">X Position</label>
+                  <input value={sigX} onChange={e => setSigX(e.target.value)}
+                    className="w-full text-xs border border-gray-300 rounded px-2 py-1" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500">Y Position</label>
+                  <input value={sigY} onChange={e => setSigY(e.target.value)}
+                    className="w-full text-xs border border-gray-300 rounded px-2 py-1" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Optional tabs */}
+          <div className="flex gap-4">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={requireInitials} onChange={e => setRequireInitials(e.target.checked)}
+                className="rounded border-gray-300 text-purple-600" />
+              Require initials
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={requireDateSigned} onChange={e => setRequireDateSigned(e.target.checked)}
+                className="rounded border-gray-300 text-purple-600" />
+              Require date signed
+            </label>
+          </div>
+
+          {/* Email subject */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Email Subject</label>
+            <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-purple-400 focus:border-purple-400" />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-5 py-3 bg-gray-50 border-t">
+          <button onClick={onClose}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onClick={() => onSubmit({
+              signerEmail: signerEmail.trim(),
+              signerName: signerName.trim(),
+              placement,
+              signaturePage: placement === 'specific' ? sigPage : null,
+              signatureX: placement === 'specific' ? sigX : null,
+              signatureY: placement === 'specific' ? sigY : null,
+              requireInitials,
+              requireDateSigned,
+              emailSubject,
+            })}
+            disabled={!canSubmit || isPending}
+            className="px-4 py-1.5 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1.5">
+            {isPending ? <Loader2 size={12} className="animate-spin" /> : <FileSignature size={12} />}
+            Send for Signature
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Item Action Menu (decision dropdown) ─────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
+function ItemActionMenu({ item, caseId, isAdmin, onSendForSignature, onStartWorkflow, onMarkComplete, onOverride, onWaive }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const hasWorkflow = !!item.workflowDefinitionId
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-sm">
+        Actions <ChevronRight size={10} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+          {hasWorkflow && (
+            <button onClick={() => { setOpen(false); onStartWorkflow() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-blue-50 text-blue-700">
+              <Play size={12} /> Start Workflow
+              <span className="text-[9px] text-gray-400 ml-auto">Auto-review</span>
+            </button>
+          )}
+
+          <button onClick={() => { setOpen(false); onSendForSignature() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-purple-50 text-purple-700">
+            <FileSignature size={12} /> Send for Signature
+          </button>
+
+          <button onClick={() => { setOpen(false); onMarkComplete() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-green-50 text-green-700">
+            <CheckCircle size={12} /> Mark as Complete
+            <span className="text-[9px] text-gray-400 ml-auto">Self-certify</span>
+          </button>
+
+          <div className="border-t border-gray-100 my-1" />
+
+          {!item.overrideStatus && (
+            <button onClick={() => { setOpen(false); onOverride() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-orange-50 text-orange-600">
+              <ShieldAlert size={12} /> {isAdmin ? 'Admin Bypass' : 'Request Override'}
+            </button>
+          )}
+
+          <button onClick={() => { setOpen(false); if (confirm('Waive this requirement?')) onWaive() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-gray-50 text-gray-500">
+            <Ban size={12} /> Waive Requirement
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Add Checklist Item Button ────────────────────────────────────────────────
+function AddChecklistItemButton({ caseId }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState('category') // 'category' | 'custom'
+  const [categoryId, setCategoryId] = useState('')
+  const [customName, setCustomName] = useState('')
+  const [isRequired, setIsRequired] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Fetch available categories
+  const { data: categories } = useQuery({
+    queryKey: ['admin', 'categories', 'flat'],
+    queryFn: () => import('../../api/adminApi').then(m => m.getCategories(true)),
+    enabled: open,
+    staleTime: 60_000,
+  })
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    try {
+      await addChecklistItem(caseId, {
+        categoryId: mode === 'category' ? Number(categoryId) : null,
+        customName: mode === 'custom' ? customName : null,
+        isRequired,
+      })
+      toast.success('Document request added')
+      qc.invalidateQueries({ queryKey: ['admin', 'case', caseId] })
+      setOpen(false)
+      setCategoryId('')
+      setCustomName('')
+      setIsRequired(false)
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Failed to add item')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="w-full flex items-center justify-center gap-1.5 py-2 mt-1 text-xs font-medium
+                   text-gray-500 bg-gray-50 border border-dashed border-gray-300 rounded-lg
+                   hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition-colors">
+        <Plus size={12} /> Add Document Request
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-1 p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-700">Add Document Request</p>
+        <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+      </div>
+
+      {/* Mode toggle */}
+      <div className="flex gap-2">
+        <button onClick={() => setMode('category')}
+          className={`px-2 py-1 text-[10px] font-medium rounded ${mode === 'category' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+          From Category
+        </button>
+        <button onClick={() => setMode('custom')}
+          className={`px-2 py-1 text-[10px] font-medium rounded ${mode === 'custom' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+          Custom Name
+        </button>
+      </div>
+
+      {mode === 'category' ? (
+        <select value={categoryId} onChange={e => setCategoryId(e.target.value)}
+          className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1.5">
+          <option value="">Select document category...</option>
+          {(Array.isArray(categories) ? categories : []).map(cat => (
+            <option key={cat.id} value={cat.id}>{cat.name}</option>
+          ))}
+        </select>
+      ) : (
+        <input value={customName} onChange={e => setCustomName(e.target.value)}
+          placeholder="e.g. Power of Attorney, Bank Statement"
+          className="w-full text-xs border border-gray-300 rounded-lg px-2 py-1.5" />
+      )}
+
+      <label className="flex items-center gap-1.5 text-xs text-gray-600">
+        <input type="checkbox" checked={isRequired} onChange={e => setIsRequired(e.target.checked)}
+          className="rounded border-gray-300" />
+        Required document
+      </label>
+
+      <button onClick={handleSubmit}
+        disabled={submitting || (mode === 'category' ? !categoryId : !customName.trim())}
+        className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-medium
+                   text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+        {submitting ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+        Add to Checklist
+      </button>
+    </div>
+  )
+}
+
 // ── Case Detail Panel ────────────────────────────────────────────────────────
 function CaseDetailPanel({ caseId, onClose }) {
   const qc = useQueryClient()
@@ -523,6 +901,7 @@ function CaseDetailPanel({ caseId, onClose }) {
   const isAdmin = userRoles.some(r => r === 'ECM_ADMIN' || r === 'ECM_SUPER_ADMIN')
   const [activeTab, setActiveTab] = useState('checklist')
   const [reasonModal, setReasonModal] = useState(null) // { transition }
+  const [viewingDocId, setViewingDocId] = useState(null) // opens DocumentViewerModal with case context
 
   // Determine if any checklist item has an active workflow for polling
   const { data: caseData, isLoading } = useQuery({
@@ -696,8 +1075,14 @@ function CaseDetailPanel({ caseId, onClose }) {
                       partyExternalId={c?.partyExternalId}
                       isAdmin={isAdmin}
                       onWaive={() => waiveMut.mutate({ itemId: item.id })}
+                      onViewDocument={(docId) => setViewingDocId(docId)}
                     />
                   ))}
+
+                  {/* Add Document Request — only when case is in progress */}
+                  {['IN_PROGRESS', 'UNDER_REVIEW'].includes(c?.status) && (
+                    <AddChecklistItemButton caseId={caseId} />
+                  )}
                 </div>
               )}
             </div>
@@ -757,6 +1142,15 @@ function CaseDetailPanel({ caseId, onClose }) {
           isPending={statusMut.isPending}
           onSubmit={(reason) => statusMut.mutate({ status: reasonModal.transition.target, reason })}
           onClose={() => setReasonModal(null)}
+        />
+      )}
+
+      {/* Document viewer with annotation support (case context) */}
+      {viewingDocId && (
+        <DocumentViewerModal
+          documentId={viewingDocId}
+          caseId={caseId}
+          onClose={() => setViewingDocId(null)}
         />
       )}
     </div>
@@ -826,6 +1220,45 @@ function CaseNotes({ caseId, metadata, isCaseClosed }) {
 }
 
 // ── Case Table (shared between tabs) ─────────────────────────────────────────
+// ── Case Owner Badge ──────────────────────────────────────────────────────────
+function CaseOwnerBadge({ caseData: c }) {
+  const isClosed = ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(c.status)
+  if (isClosed) return <span className="text-xs text-gray-300">—</span>
+
+  // Actively working (claimed)
+  if (c.claimedByName || c.claimedBy) {
+    const name = c.claimedByName || c.claimedBy?.split('@')[0]
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full" title={c.claimedBy}>
+        {name}
+      </span>
+    )
+  }
+
+  // Assigned to person (not yet started)
+  if (c.assignedToName || c.assignedTo) {
+    const name = c.assignedToName || c.assignedTo?.split('@')[0]
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full" title={c.assignedTo}>
+        → {name}
+      </span>
+    )
+  }
+
+  // Assigned to group (unclaimed)
+  if (c.assignedToGroup) {
+    const group = c.assignedToGroup.replace('ECM_', '').replace(/_/g, ' ')
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+        → {group}
+      </span>
+    )
+  }
+
+  // Unassigned
+  return <span className="text-xs text-gray-400 italic">Unassigned</span>
+}
+
 function CaseTable({ cases, isLoading, emptyMessage, navigate }) {
   const caseList = Array.isArray(cases) ? cases : []
   if (isLoading) return (
@@ -849,7 +1282,7 @@ function CaseTable({ cases, isLoading, emptyMessage, navigate }) {
           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Type</th>
           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Ref</th>
           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Status</th>
-          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Assigned</th>
+          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Owner</th>
           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Opened</th>
         </tr>
       </thead>
@@ -865,8 +1298,8 @@ function CaseTable({ cases, isLoading, emptyMessage, navigate }) {
             <td className="px-4 py-3 text-xs text-gray-500">{c.caseType?.replace(/_/g, ' ')}</td>
             <td className="px-4 py-3 text-xs font-mono text-gray-500">{c.externalRef ?? '—'}</td>
             <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
-            <td className="px-4 py-3 text-xs text-gray-500">
-              {c.claimedByName ?? c.assignedToName ?? c.assignedToGroup?.replace('ECM_', '') ?? '—'}
+            <td className="px-4 py-3">
+              <CaseOwnerBadge caseData={c} />
             </td>
             <td className="px-4 py-3 text-xs text-gray-400">
               {c.openedAt ? new Date(c.openedAt).toLocaleDateString() : '—'}
@@ -881,67 +1314,82 @@ function CaseTable({ cases, isLoading, emptyMessage, navigate }) {
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function CasesPage() {
   const [showCreate, setShowCreate] = useState(false)
-  const [tab, setTab] = useState('all') // all | mine | new | review | approval
+  const [tab, setTab] = useState('all') // all | mine | unassigned | new | review | approval
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
   const [caseTypeFilter, setCaseTypeFilter] = useState('')
+  const [page, setPage] = useState(0)
+  const pageSize = 20
   const navigate = useNavigate()
   const { user } = useUserStore()
   const currentEmail = user?.email ?? ''
-  const userRoles = user?.roles ?? []
+  const userRoles = useMemo(() => user?.roles ?? [], [user?.roles])
 
-  const { data: allCases = [], isLoading } = useQuery({
-    queryKey: ['admin', 'cases', { status: statusFilter || undefined, search: search || undefined, caseType: caseTypeFilter || undefined }],
-    queryFn: () => listCases({
-      status: statusFilter || undefined,
+  // Build server-side params based on active tab
+  const serverParams = useMemo(() => {
+    const params = {
+      page,
+      size: pageSize,
       search: search || undefined,
       caseType: caseTypeFilter || undefined,
-    }),
-    staleTime: 30_000,
-  })
-
-  const caseList = Array.isArray(allCases) ? allCases : []
-
-  // Client-side tab filtering — lobby model
-  const filteredCases = useMemo(() => {
+    }
     switch (tab) {
       case 'mine':
-        return caseList.filter(c =>
-          c.assignedTo === currentEmail || c.claimedBy === currentEmail
-        )
+        params.assignedTo = currentEmail
+        break
+      case 'unassigned':
+        params.unclaimed = true
+        // Pass first matching role as group filter
+        if (userRoles.length > 0) params.assignedToGroup = userRoles[0]
+        break
       case 'new':
-        return caseList.filter(c => c.status === 'NEW' || c.status === 'OPEN')
+        params.status = 'NEW'
+        break
       case 'review':
-        return caseList.filter(c => c.status === 'REVIEW_PENDING')
+        params.status = 'REVIEW_PENDING'
+        break
       case 'approval':
-        return caseList.filter(c => c.status === 'PENDING_APPROVAL')
+        params.status = 'PENDING_APPROVAL'
+        break
       default:
-        return caseList
+        if (statusFilter) params.status = statusFilter
+        break
     }
-  }, [caseList, tab, currentEmail])
+    return params
+  }, [tab, page, search, caseTypeFilter, statusFilter, currentEmail, userRoles])
 
-  const myCaseCount = useMemo(() =>
-    caseList.filter(c => c.assignedTo === currentEmail || c.claimedBy === currentEmail).length
-  , [caseList, currentEmail])
+  const { data: pagedResult, isLoading } = useQuery({
+    queryKey: ['admin', 'cases', serverParams],
+    queryFn: () => listCases(serverParams),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+  })
 
-  const newCount = useMemo(() =>
-    caseList.filter(c => c.status === 'NEW' || c.status === 'OPEN').length
-  , [caseList])
+  // Handle both paginated response { content, totalElements, ... } and legacy array response
+  const filteredCases = useMemo(() => {
+    if (!pagedResult) return []
+    if (Array.isArray(pagedResult)) return pagedResult // legacy fallback
+    return Array.isArray(pagedResult.content) ? pagedResult.content : []
+  }, [pagedResult])
 
-  const reviewCount = useMemo(() =>
-    caseList.filter(c => c.status === 'REVIEW_PENDING').length
-  , [caseList])
+  const totalElements = pagedResult?.totalElements ?? filteredCases.length
+  const totalPages = pagedResult?.totalPages ?? 1
 
-  const approvalCount = useMemo(() =>
-    caseList.filter(c => c.status === 'PENDING_APPROVAL').length
-  , [caseList])
+  // Reset page when tab or filters change
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setPage(0) }, [tab, statusFilter, search, caseTypeFilter])
+
+  // Tab counts — use totalElements from server for active tab, estimate for others
+  // For non-active tabs, show "—" since we don't have the count without a separate query
+  const activeTabTotal = totalElements
 
   const TABS = [
-    { key: 'all',      label: 'All Cases' },
-    { key: 'mine',     label: 'My Cases',        count: myCaseCount },
-    { key: 'new',      label: 'New Queue',        count: newCount },
-    { key: 'review',   label: 'Review Queue',     count: reviewCount },
-    { key: 'approval', label: 'Approval Queue',   count: approvalCount },
+    { key: 'all',         label: 'All Cases' },
+    { key: 'mine',        label: 'My Cases' },
+    { key: 'unassigned',  label: 'Unassigned' },
+    { key: 'new',         label: 'New Queue' },
+    { key: 'review',      label: 'Review Queue' },
+    { key: 'approval',    label: 'Approval Queue' },
   ]
 
   return (
@@ -965,10 +1413,10 @@ export default function CasesPage() {
               tab === t.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}>
             {t.label}
-            {t.count != null && t.count > 0 && (
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                tab === t.key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-              }`}>{t.count}</span>
+            {tab === t.key && activeTabTotal > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                {activeTabTotal}
+              </span>
             )}
           </button>
         ))}
@@ -1017,6 +1465,32 @@ export default function CasesPage() {
           }
         />
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-1">
+          <p className="text-xs text-gray-500">
+            Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, totalElements)} of {totalElements} cases
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-gray-600">Page {page + 1} of {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {showCreate && <CreateCaseModal onClose={() => setShowCreate(false)} />}
     </div>

@@ -13,8 +13,9 @@ import {
   Inbox, UserCheck, CheckCircle2, Clock, RefreshCw,
   Building2, FileText, AlertCircle, ChevronDown,
   CheckCircle, XCircle, MessageSquare, UserMinus, Loader2,
-  Forward,
+  Forward, Eye,
 } from 'lucide-react'
+import DocumentViewerModal from '../../components/documents/DocumentViewerModal'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { formatDistanceToNow, format } from 'date-fns'
@@ -162,7 +163,7 @@ function ActionModal({ task, action, onClose, onConfirm, isPending }) {
 }
 
 // ── Task Row ──────────────────────────────────────────────────────────────────
-function TaskRow({ task, currentUserSubject, isAdmin, onAction }) {
+function TaskRow({ task, currentUserSubject, isAdmin, onAction, onViewDocument }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const { data: history } = useQuery({
     queryKey: ['task-history', task.taskId],
@@ -183,10 +184,17 @@ function TaskRow({ task, currentUserSubject, isAdmin, onAction }) {
         <td className="px-4 py-3">
           <div className="space-y-1">
             <p className="text-sm font-semibold text-gray-800 leading-snug">{task.taskName || 'Review Task'}</p>
-            {task.documentName && (
-              <p className="text-xs text-gray-400 flex items-center gap-1">
-                <FileText size={10} /> {task.documentName}
-              </p>
+            {(task.documentName || task.documentId) && (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <FileText size={10} className="text-gray-400 shrink-0" />
+                <span className="text-xs text-gray-500 truncate">{task.documentName || 'Document'}</span>
+                {task.documentId && (
+                  <button onClick={(e) => { e.stopPropagation(); onViewDocument(task.documentId) }}
+                    className="text-blue-500 hover:text-blue-700 cursor-pointer shrink-0" title="View document">
+                    <Eye size={13} />
+                  </button>
+                )}
+              </div>
             )}
             {task.formName && (
               <p className="text-xs text-blue-500">{task.formName}</p>
@@ -383,6 +391,7 @@ export default function BackofficeQueuePage() {
   const { user } = useUserStore()
   const [tab, setTab] = useState('unassigned') // unassigned | mine | all
   const [modal, setModal] = useState(null) // { action, task }
+  const [viewingDocId, setViewingDocId] = useState(null) // document viewer
 
   const isAdmin = user?.roles?.some(r => r === 'ECM_ADMIN' || r === 'ECM_SUPER_ADMIN')
   const currentUserSubject = user?.entraObjectId || user?.email || ''
@@ -555,6 +564,7 @@ export default function BackofficeQueuePage() {
                   currentUserSubject={currentUserSubject}
                   isAdmin={isAdmin}
                   onAction={handleAction}
+                  onViewDocument={setViewingDocId}
                 />
               ))}
             </tbody>
@@ -570,6 +580,14 @@ export default function BackofficeQueuePage() {
           onClose={() => setModal(null)}
           onConfirm={handleConfirm}
           isPending={actionMut.isPending}
+        />
+      )}
+
+      {/* Document Viewer — opened from task row eye button */}
+      {viewingDocId && (
+        <DocumentViewerModal
+          documentId={viewingDocId}
+          onClose={() => setViewingDocId(null)}
         />
       )}
     </div>

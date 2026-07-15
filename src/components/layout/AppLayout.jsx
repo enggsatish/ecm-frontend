@@ -1,30 +1,59 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header  from './Header'
 import { useCurrentUser } from '../../hooks/useCurrentUser'
+import AiChatPanel from '../common/AiChatPanel'
 import useTenantStore from '../../store/tenantStore'
+import useUiStore from '../../store/uiStore'
 
 // Routes where the main area should NOT have its own padding/scroll —
 // the page component owns its own layout entirely (e.g. the form designer).
 const FULL_HEIGHT_ROUTES = [
   '/eforms/designer/new',
   '/eforms/designer/',   // prefix match — any /eforms/designer/:id
-  // Note: /workflow/designer is NOT listed here — the BPMN editor renders as a
-  // fixed overlay (TemplateEditor), so the template list page needs normal scrolling.
 ]
 
 function isFullHeightRoute(pathname) {
-  // /eforms/designer/list is a scrollable list page, not a full-height canvas
   if (pathname === '/eforms/designer/list') return false;
   return FULL_HEIGHT_ROUTES.some(r => pathname.startsWith(r))
 }
+
+const MOBILE_BREAKPOINT = 768
 
 export default function AppLayout() {
   const location = useLocation()
   const { isLoading, isError } = useCurrentUser()
   const fullHeight = isFullHeightRoute(location.pathname)
   const { loaded: tenantLoaded, loadConfig } = useTenantStore()
+  const { sidebarCollapsed, setSidebarCollapsed } = useUiStore()
+
+  // ── Mobile detection ────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < MOBILE_BREAKPOINT
+      setIsMobile(mobile)
+      if (mobile && !sidebarCollapsed) setSidebarCollapsed(true)
+      if (!mobile) setMobileMenuOpen(false)
+    }
+    window.addEventListener('resize', handleResize)
+    // Initial check
+    if (window.innerWidth < MOBILE_BREAKPOINT && !sidebarCollapsed) setSidebarCollapsed(true)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [sidebarCollapsed, setSidebarCollapsed])
+
+  // Close mobile menu on navigation
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMobileMenuOpen(false)
+  }, [location.pathname])
+
+  const toggleMobileMenu = useCallback(() => {
+    setMobileMenuOpen(v => !v)
+  }, [])
 
   // Load tenant config once on app startup
   useEffect(() => {
@@ -95,20 +124,35 @@ export default function AppLayout() {
   // ── Authenticated layout ──────────────────────────────────────
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--color-page-bg, #f4f6f9)' }}>
-      <Sidebar />
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <Header pathname={location.pathname} />
 
-        {/*
-          Two modes:
-          - Normal pages: overflow-y-auto + padding — page content scrolls naturally
-          - Full-height pages (Form Designer): overflow-hidden, no padding —
-            the page component owns its own scroll regions
-        */}
-        <main className={fullHeight ? 'flex-1 overflow-hidden flex flex-col' : 'flex-1 overflow-y-auto p-6'}>
+      {/* Desktop sidebar — always visible */}
+      {!isMobile && <Sidebar />}
+
+      {/* Mobile sidebar — overlay */}
+      {isMobile && mobileMenuOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-30 transition-opacity"
+            onClick={() => setMobileMenuOpen(false)} />
+          <div className="fixed inset-y-0 left-0 z-40 w-64">
+            <Sidebar forcedExpanded onNavClick={() => setMobileMenuOpen(false)} />
+          </div>
+        </>
+      )}
+
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <Header pathname={location.pathname} isMobile={isMobile} onMenuToggle={toggleMobileMenu} />
+
+        <main className={
+          fullHeight
+            ? 'flex-1 overflow-hidden flex flex-col'
+            : 'flex-1 overflow-y-auto p-3 md:p-6'
+        }>
           <Outlet />
         </main>
       </div>
+
+      {/* AI Chat widget — floating bottom-right */}
+      <AiChatPanel />
     </div>
   )
 }

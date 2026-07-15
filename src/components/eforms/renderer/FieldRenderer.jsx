@@ -5,6 +5,7 @@
  * Respects hidden/required/disabled state from rule engine output.
  */
 
+// eslint-disable-next-line no-unused-vars
 export default function FieldRenderer({ field, value, onChange, isRequired, isDisabled, error }) {
   const baseInputCls = `w-full text-sm border rounded-lg px-3 py-2 transition-colors
     focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400
@@ -169,6 +170,45 @@ export default function FieldRenderer({ field, value, onChange, isRequired, isDi
     case 'PARAGRAPH':
       return (
         <p className="text-sm text-gray-600 leading-relaxed">{field.label}</p>
+      );
+
+    case 'LABEL':
+      return (
+        <span className={`text-sm text-gray-700 leading-relaxed inline-flex items-center h-[38px] ${field.required ? 'font-semibold' : ''}`}>
+          {field.label}
+        </span>
+      );
+
+    case 'SIGNATURE':
+      return (
+        <div className="border-2 border-dashed border-indigo-200 bg-indigo-50/30 rounded-lg px-4 py-4 text-center">
+          <span className="text-2xl">✍️</span>
+          <p className="text-xs text-indigo-500 font-medium mt-1">{field.label || 'Signature'}</p>
+          <p className="text-[10px] text-indigo-400">Signed via DocuSign</p>
+        </div>
+      );
+
+    case 'INITIALS':
+      return (
+        <div className="border-2 border-dashed border-indigo-200 bg-indigo-50/30 rounded-lg px-3 py-3 text-center inline-block">
+          <span className="text-lg">✍️</span>
+          <p className="text-[10px] text-indigo-500 font-medium">{field.label || 'Initials'}</p>
+        </div>
+      );
+
+    case 'SIGNER_EMAIL':
+      return (
+        <div>
+          <input
+            type="email"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.placeholder || 'Signer email address (DocuSign sends here)'}
+            disabled={isDisabled}
+            className={`${baseInputCls} ${error ? 'border-red-400 bg-red-50' : ''}`}
+          />
+          <p className="mt-1 text-[10px] text-indigo-400">DocuSign signing invitation will be sent to this email</p>
+        </div>
       );
 
     case 'DIVIDER':

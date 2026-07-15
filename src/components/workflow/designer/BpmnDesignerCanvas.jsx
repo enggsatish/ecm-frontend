@@ -194,8 +194,10 @@ function StartEventProps({ el, modeler }) {
   const [initiator, setInitiator] = useState(getFlowAttr(el, 'initiator') || 'initiator');
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setName(el.businessObject.name ?? '');
     setInitiator(getFlowAttr(el, 'initiator') || 'initiator');
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [el]);
 
   useAutoApply(el, modeler, () => ({
@@ -231,6 +233,7 @@ function UserTaskProps({ el, modeler }) {
   const [assignee, setAssignee] = useState('');
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     const n = el.businessObject.name ?? '';
     const cg = getFlowAttr(el, 'candidateGroups');
     const ag = getFlowAttr(el, 'assignee');
@@ -249,6 +252,7 @@ function UserTaskProps({ el, modeler }) {
       setGroupSel('CUSTOM');
       setGroupRaw('');
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [el]);
 
   useAutoApply(el, modeler, () => {
@@ -319,6 +323,7 @@ function ServiceTaskProps({ el, modeler }) {
   const [dsEmailVar, setDsEmailVar] = useState('submitterEmail');
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setName(el.businessObject.name ?? '');
     const de = getFlowAttr(el, 'delegateExpression');
     const known = DOCUSIGN_DELEGATES.find((d) => d.value === de);
@@ -327,6 +332,7 @@ function ServiceTaskProps({ el, modeler }) {
     else { setDelegateSel('CUSTOM'); setDelegateRaw(''); }
     setDsSubject(getFlowAttr(el, 'docusignSubjectTemplate') || '');
     setDsEmailVar(getFlowAttr(el, 'docusignRecipientEmailVar') || 'submitterEmail');
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [el]);
 
   const isDocuSign = delegateSel === '${docuSignDelegate}' ||
@@ -405,7 +411,10 @@ function GatewayProps({ el, modeler }) {
   const isExclusive = el.type === 'bpmn:ExclusiveGateway';
   const [name, setName] = useState(el.businessObject.name ?? '');
 
-  useEffect(() => setName(el.businessObject.name ?? ''), [el]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setName(el.businessObject.name ?? '');
+  }, [el]);
 
   useAutoApply(el, modeler, () => ({ name }), [name]);
 
@@ -451,10 +460,12 @@ function SequenceFlowProps({ el, modeler }) {
   );
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setName(el.businessObject.name ?? '');
     const parsed = parseCondition(el);
     setCondition(parsed);
     if (parsed === 'CUSTOM') setCustomExpr(el.businessObject.conditionExpression?.body ?? '');
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [el]);
 
   useAutoApply(el, modeler, () => {
@@ -517,8 +528,10 @@ function EndEventProps({ el, modeler }) {
   );
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setName(el.businessObject.name ?? '');
     setStatus(el.businessObject.$attrs?.['ecm:status'] ?? 'COMPLETED');
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [el]);
 
   const isApproved = name.toLowerCase().includes('approv') || status === 'COMPLETED';
@@ -587,28 +600,27 @@ function EcmPropertiesPanel({ selectedElement, modelerRef }) {
     );
   }
 
+  // eslint-disable-next-line react-hooks/refs
   const modeler = modelerRef.current;
   const type = selectedElement.type;
 
-  const renderProps = () => {
-    if (type === 'bpmn:StartEvent')
-      return <StartEventProps el={selectedElement} modeler={modeler} />;
-    if (type === 'bpmn:UserTask')
-      return <UserTaskProps el={selectedElement} modeler={modeler} />;
-    if (type === 'bpmn:ServiceTask')
-      return <ServiceTaskProps el={selectedElement} modeler={modeler} />;
-    if (type === 'bpmn:ExclusiveGateway' || type === 'bpmn:ParallelGateway')
-      return <GatewayProps el={selectedElement} modeler={modeler} />;
-    if (type === 'bpmn:SequenceFlow')
-      return <SequenceFlowProps el={selectedElement} modeler={modeler} />;
-    if (type === 'bpmn:EndEvent')
-      return <EndEventProps el={selectedElement} modeler={modeler} />;
-    return (
+  const propsContent = type === 'bpmn:StartEvent'
+    ? <StartEventProps el={selectedElement} modeler={modeler} />
+    : type === 'bpmn:UserTask'
+    ? <UserTaskProps el={selectedElement} modeler={modeler} />
+    : type === 'bpmn:ServiceTask'
+    ? <ServiceTaskProps el={selectedElement} modeler={modeler} />
+    : (type === 'bpmn:ExclusiveGateway' || type === 'bpmn:ParallelGateway')
+    ? <GatewayProps el={selectedElement} modeler={modeler} />
+    : type === 'bpmn:SequenceFlow'
+    ? <SequenceFlowProps el={selectedElement} modeler={modeler} />
+    : type === 'bpmn:EndEvent'
+    ? <EndEventProps el={selectedElement} modeler={modeler} />
+    : (
       <div className="text-xs text-slate-400 text-center pt-8">
         No properties available for <code>{type}</code>
       </div>
     );
-  };
 
   return (
     <aside
@@ -622,7 +634,7 @@ function EcmPropertiesPanel({ selectedElement, modelerRef }) {
         <div className="text-xs text-slate-400 mt-0.5 font-mono">{type?.replace('bpmn:', '')}</div>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        {renderProps()}
+        {propsContent}
       </div>
       <div className="px-4 py-2 border-t border-slate-100 text-xs text-slate-400 text-center">
         Changes apply automatically to the canvas
@@ -635,7 +647,7 @@ function EcmPropertiesPanel({ selectedElement, modelerRef }) {
 // MAIN CANVAS COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function BpmnDesignerCanvas({ templateId, onSaved, readOnly = false }) {
+export default function BpmnDesignerCanvas({ templateId, initialXml, onSaved, readOnly = false }) {
   const containerRef = useRef(null);
   const modelerRef   = useRef(null);
 
@@ -693,15 +705,74 @@ export default function BpmnDesignerCanvas({ templateId, onSaved, readOnly = fal
           }
         };
 
-        // Load existing BPMN from backend
+        // Load existing BPMN: prefer initialXml prop > template.bpmnXml > preview endpoint
         const tmpl = await getTemplate(templateId);
         if (cancelled) { modelerInstance.destroy(); return; }
 
-        const xml = tmpl?.bpmnXml || await getTemplateBpmnXml(templateId);
+        let xml = initialXml || tmpl?.bpmnXml;
+        if (!xml) {
+          try { xml = await getTemplateBpmnXml(templateId); } catch { /* ignore */ }
+        }
         if (cancelled) { modelerInstance.destroy(); return; }
 
-        console.log('[BpmnDesigner] Loaded:', tmpl?.bpmnSource, xml?.length, 'chars');
-        await modelerInstance.importXML(xml);
+        // Fallback: minimal valid BPMN if template has no XML yet (e.g. DSL-only mode)
+        if (!xml || xml.trim().length < 50) {
+          const pk = tmpl?.processKey || 'process_' + templateId;
+          xml = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             targetNamespace="http://www.flowable.org/processdef">
+  <process id="${pk}" name="${tmpl?.name || 'Workflow'}" isExecutable="true">
+    <startEvent id="start"/><endEvent id="end"/>
+    <sequenceFlow id="flow1" sourceRef="start" targetRef="end"/>
+  </process>
+  <bpmndi:BPMNDiagram id="d1">
+    <bpmndi:BPMNPlane id="p1" bpmnElement="${pk}">
+      <bpmndi:BPMNShape id="s1" bpmnElement="start"><omgdc:Bounds x="150" y="150" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s2" bpmnElement="end"><omgdc:Bounds x="350" y="150" width="36" height="36"/></bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>`;
+          console.log('[BpmnDesigner] No BPMN stored — using fallback starter diagram');
+        } else {
+          console.log('[BpmnDesigner] Loaded:', tmpl?.bpmnSource, xml?.length, 'chars');
+        }
+
+        try {
+          await modelerInstance.importXML(xml);
+        } catch (importErr) {
+          console.warn('[BpmnDesigner] Import failed, retrying with minimal BPMN:', importErr.message);
+          // Force fallback — stored XML is invalid or missing diagram
+          const pk = tmpl?.processKey || 'process_' + templateId;
+          const fallback = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://www.flowable.org/processdef">
+  <process id="${pk}" name="${tmpl?.name || 'Workflow'}" isExecutable="true">
+    <startEvent id="startEvent1"/>
+    <sequenceFlow id="flow1" sourceRef="startEvent1" targetRef="endEvent1"/>
+    <endEvent id="endEvent1"/>
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="${pk}">
+      <bpmndi:BPMNShape id="startEvent1_di" bpmnElement="startEvent1">
+        <omgdc:Bounds x="152" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="endEvent1_di" bpmnElement="endEvent1">
+        <omgdc:Bounds x="352" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="flow1_di" bpmnElement="flow1">
+        <omgdi:waypoint x="188" y="120"/>
+        <omgdi:waypoint x="352" y="120"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>`;
+          await modelerInstance.importXML(fallback);
+        }
         if (cancelled) { modelerInstance.destroy(); return; }
 
         modelerInstance.get('canvas').zoom('fit-viewport', 'auto');
@@ -731,7 +802,6 @@ export default function BpmnDesignerCanvas({ templateId, onSaved, readOnly = fal
       cancelled = true;
       modelerInstance?.destroy();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -773,7 +843,7 @@ export default function BpmnDesignerCanvas({ templateId, onSaved, readOnly = fal
           requestAnimationFrame(() => {
             try {
               modelerRef.current?.get('canvas').zoom('fit-viewport', 'auto');
-            } catch (_) { /* ignore zoom errors on resize */ }
+            } catch { /* ignore zoom errors on resize */ }
           });
           setDirty(true);
         } catch (err) {

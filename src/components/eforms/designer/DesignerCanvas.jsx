@@ -4,12 +4,12 @@
  * Renders sections + fields. Accepts drag-drop from FieldPalette.
  * Fields can be reordered within a section via drag handles.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from 'lucide-react';
 import { useEFormsDesignerStore } from '../../../store/eformsStore';
 
 export default function DesignerCanvas() {
-  const { schema, meta, addSection, selectedFieldId, selectField, getSelectedField, removeField } = useEFormsDesignerStore();
+  const { schema, meta, addSection, selectedFieldId, getSelectedField, removeField } = useEFormsDesignerStore();
   const isInline = (schema.labelPosition || 'inline') === 'inline';
 
   // Delete key removes selected field
@@ -135,9 +135,12 @@ function SectionBlock({ section, selectedFieldId, isInline }) {
     updateSection,
     removeSection,
     addField,
+    updateField,
     reorderFields,
     selectField,
   } = useEFormsDesignerStore();
+
+  const gridRef = useRef(null);
 
   const [collapsed, setCollapsed] = useState(false);
   const [isDragOverSection, setIsDragOverSection] = useState(false);
@@ -225,7 +228,7 @@ function SectionBlock({ section, selectedFieldId, isInline }) {
               <p className="text-xs text-gray-400">Drop fields here</p>
             </div>
           ) : (
-            <div className="grid grid-cols-12 gap-3">
+            <div ref={gridRef} className="grid grid-cols-12 gap-3">
               {section.fields.map((field, idx) => (
                 <FieldCard
                   key={field.id}
@@ -239,6 +242,8 @@ function SectionBlock({ section, selectedFieldId, isInline }) {
                   onDragStart={(e) => handleFieldDragStart(e, idx)}
                   onDragOver={(e) => handleFieldDragOver(e, idx)}
                   onDrop={(e) => handleFieldDrop(e, idx)}
+                  gridRef={gridRef}
+                  onResize={(span) => updateField(section.id, field.id, { colSpan: span })}
                 />
               ))}
             </div>
@@ -259,99 +264,186 @@ function SectionBlock({ section, selectedFieldId, isInline }) {
 }
 
 // ─── Field Card ───────────────────────────────────────────────────────────────
-function FieldCard({ field, idx, isInline, isSelected, isDragOver, isDragging, onSelect, onDragStart, onDragOver, onDrop }) {
-  const colClass = colSpanClass(field.colSpan || 6);
-  const isDisplayOnly = ['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER'].includes(field.type);
+// eslint-disable-next-line no-unused-vars
+function FieldCard({ field, idx, isInline, isSelected, isDragOver, isDragging, onSelect, onDragStart, onDragOver, onDrop, gridRef, onResize }) {
+  const cardRef = useRef(null);
+  const [liveSpan, setLiveSpan] = useState(field.colSpan || 6);
+  const [isResizing, setIsResizing] = useState(false);
+  const isDisplayOnly = ['SECTION_HEADER', 'PARAGRAPH', 'LABEL', 'DIVIDER', 'SIGNATURE', 'INITIALS'].includes(field.type);
+
+  // Keep liveSpan in sync when colSpan changes externally (e.g. via config panel)
+  useEffect(() => { setLiveSpan(field.colSpan || 6); }, [field.colSpan]);
+
+  const handleResizeStart = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const gridEl = gridRef?.current;
+    const cardEl = cardRef.current;
+    if (!gridEl || !cardEl) return;
+
+    const gridWidth = gridEl.getBoundingClientRect().width;
+    const cardLeft = cardEl.getBoundingClientRect().left;
+    const GAP = 12; // gap-3 = 0.75rem = 12px
+    const colUnit = (gridWidth - 11 * GAP) / 12;
+
+    let currentSpan = field.colSpan || 6;
+    setIsResizing(true);
+
+    const onMove = (ev) => {
+      const width = ev.clientX - cardLeft;
+      const span = Math.max(2, Math.min(12, Math.round((width + GAP) / (colUnit + GAP))));
+      currentSpan = span;
+      setLiveSpan(span);
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setIsResizing(false);
+      onResize(currentSpan);
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
 
   return (
     <div
-      className={`${colClass} relative`}
+      style={{ gridColumn: `span ${liveSpan} / span ${liveSpan}` }}
+      className="relative"
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
       <div
+        ref={cardRef}
         draggable
         onDragStart={onDragStart}
         onClick={onSelect}
-        className={`rounded-lg border-2 px-3 py-2.5 cursor-pointer transition-all group
+        className={`rounded-lg border-2 px-2 py-1.5 cursor-pointer transition-all group relative
           ${isDragging ? 'opacity-40' : ''}
           ${isDragOver ? 'border-indigo-400 shadow-md' : ''}
           ${isSelected
             ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300'
-            : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-sm'
+            : field.type === 'LABEL'
+              ? 'border-dashed border-gray-200 bg-transparent hover:border-indigo-300'
+              : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-sm'
           }`}
       >
-        {isInline && !isDisplayOnly ? (
-          <div className="flex items-center gap-3">
-            <GripVertical className="w-3.5 h-3.5 text-gray-300 cursor-grab flex-shrink-0 group-hover:text-gray-400" />
-            <span className="text-xs font-medium text-gray-700 w-32 flex-shrink-0 text-right truncate">
-              {field.label || '—'}
-              {field.required && <span className="text-red-400 ml-0.5">*</span>}
-            </span>
-            <div className="flex-1 min-w-0">
-              <FieldPreview field={field} inline />
-            </div>
-            <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">{field.type}</span>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-start gap-1.5">
-              <GripVertical className="w-3.5 h-3.5 text-gray-300 cursor-grab mt-0.5 flex-shrink-0 group-hover:text-gray-400" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-700 truncate">
-                  {field.label || '—'}
-                  {field.required && <span className="text-red-400 ml-0.5">*</span>}
-                </p>
-                <p className="text-xs text-gray-400 truncate font-mono">{field.type}</p>
-              </div>
-            </div>
-            <FieldPreview field={field} />
-          </>
-        )}
+        {/* Grip — hover-only overlay, takes zero layout space */}
+        <GripVertical className="absolute top-1 left-1 w-3 h-3 text-gray-300 cursor-grab
+                                  opacity-0 group-hover:opacity-100 transition-opacity z-10" />
+        {/* Just the widget — no label row */}
+        <FieldPreview field={field} />
+
+        {/* Resize handle — right edge, visible on hover */}
+        <div
+          onMouseDown={handleResizeStart}
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize rounded-r-lg
+                     flex items-center justify-center opacity-0 group-hover:opacity-100
+                     transition-opacity z-10 hover:bg-indigo-100/60"
+        >
+          <div className="w-0.5 h-5 bg-indigo-400 rounded-full" />
+        </div>
       </div>
+
+      {/* Span badge — floats above card while resizing */}
+      {isResizing && (
+        <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-20 bg-indigo-600 text-white
+                        text-[10px] font-mono px-2 py-0.5 rounded shadow-lg whitespace-nowrap pointer-events-none">
+          {liveSpan}/12 · {Math.round((liveSpan / 12) * 100)}%
+        </div>
+      )}
     </div>
   );
 }
 
-function FieldPreview({ field, inline = false }) {
-  const mt = inline ? '' : 'mt-1.5';
-  const cls = `${mt} w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-400 pointer-events-none`;
+const previewInputCls =
+  'w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white text-gray-400 pointer-events-none placeholder-gray-300';
 
+function FieldPreview({ field }) {
   switch (field.type) {
     case 'TEXT_INPUT':
+      return <input disabled className={previewInputCls} placeholder={field.placeholder || 'Text input...'} />;
     case 'EMAIL':
+      return <input disabled type="email" className={previewInputCls} placeholder={field.placeholder || 'email@example.com'} />;
     case 'PHONE':
-      return <div className={cls}>{field.placeholder || 'Text input...'}</div>;
-    case 'TEXT_AREA':
-      return <div className={`${cls} ${inline ? '' : 'h-10'}`}>{field.placeholder || 'Text area...'}</div>;
+      return <input disabled type="tel" className={previewInputCls} placeholder={field.placeholder || '+1 (555) 000-0000'} />;
     case 'NUMBER':
-      return <div className={cls}>0</div>;
+      return <input disabled type="number" className={previewInputCls} placeholder={field.placeholder || '0'} />;
     case 'DATE':
-      return <div className={cls}>mm/dd/yyyy</div>;
+      return <input disabled type="date" className={previewInputCls} />;
+    case 'TEXT_AREA':
+      return <textarea disabled rows={2} className={`${previewInputCls} resize-none`} placeholder={field.placeholder || 'Text area...'} />;
     case 'DROPDOWN':
-      return <div className={`${cls} flex justify-between`}><span>Select...</span><span>▾</span></div>;
+      return (
+        <select disabled className={previewInputCls}>
+          <option>Select an option...</option>
+          {(field.options || []).slice(0, 3).map((o) => (
+            <option key={o.value}>{o.label}</option>
+          ))}
+        </select>
+      );
     case 'OPTION_BUTTON':
       return (
-        <div className={`${mt} flex flex-wrap gap-1`}>
+        <div className="flex flex-wrap gap-1">
           {(field.options || []).slice(0, 3).map((o) => (
-            <span key={o.value} className="text-xs px-2 py-0.5 rounded-full border border-gray-200 text-gray-400">{o.label}</span>
+            <span key={o.value} className="text-[10px] px-2 py-0.5 rounded-full border border-gray-300 text-gray-400 bg-white">
+              {o.label}
+            </span>
           ))}
         </div>
       );
     case 'CHECKBOX':
-      return <div className={`${mt} flex items-center gap-1`}><span className="w-3 h-3 border border-gray-300 rounded inline-block" /><span className="text-xs text-gray-400">Checkbox</span></div>;
+      return (
+        <div className="flex items-center gap-1.5">
+          <span className="w-3.5 h-3.5 border-2 border-gray-300 rounded inline-block flex-shrink-0" />
+          <span className="text-xs text-gray-400 truncate">{field.label || 'Checkbox'}</span>
+        </div>
+      );
+    case 'CHECKBOX_GROUP':
+      return (
+        <div className="space-y-1">
+          {(field.options || []).slice(0, 2).map((o) => (
+            <div key={o.value} className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 border-2 border-gray-300 rounded inline-block flex-shrink-0" />
+              <span className="text-[10px] text-gray-400">{o.label}</span>
+            </div>
+          ))}
+        </div>
+      );
     case 'SECTION_HEADER':
-      return <div className="mt-1 border-b border-gray-300" />;
+      return <div className="border-b-2 border-gray-300 pb-0.5" />;
     case 'PARAGRAPH':
-      return <div className="mt-1 text-xs text-gray-400 line-clamp-2">{field.label}</div>;
+      return <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">{field.label || 'Paragraph text...'}</p>;
+    case 'LABEL':
+      return (
+        <span className={`text-sm text-gray-700 ${field.required ? 'font-semibold' : ''}`}>
+          {field.label || 'Label'}
+        </span>
+      );
+    case 'SIGNATURE':
+      return (
+        <div className="border-2 border-dashed border-indigo-200 bg-indigo-50/40 rounded-md px-3 py-2 flex items-center gap-2">
+          <span className="text-sm text-indigo-400">✍</span>
+          <span className="text-xs text-indigo-500 font-medium">Signature (DocuSign)</span>
+        </div>
+      );
+    case 'INITIALS':
+      return (
+        <div className="border-2 border-dashed border-indigo-200 bg-indigo-50/40 rounded-md px-2 py-1.5 inline-flex items-center gap-1.5">
+          <span className="text-xs text-indigo-400">✍</span>
+          <span className="text-[10px] text-indigo-500 font-medium">Initials</span>
+        </div>
+      );
     case 'DIVIDER':
-      return <div className={`${mt} border-t border-gray-200`} />;
+      return <div className="border-t border-gray-200 my-0.5" />;
     default:
       return null;
   }
 }
 
-function colSpanClass(span) {
-  const map = { 3: 'col-span-3', 4: 'col-span-4', 6: 'col-span-6', 8: 'col-span-8', 12: 'col-span-12' };
-  return map[span] || 'col-span-6';
-}

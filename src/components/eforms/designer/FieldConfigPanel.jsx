@@ -17,7 +17,7 @@ const COL_SPANS = [
 const HAS_OPTIONS = ['DROPDOWN', 'OPTION_BUTTON', 'CHECKBOX_GROUP'];
 const HAS_VALIDATION = ['TEXT_INPUT', 'TEXT_AREA', 'NUMBER', 'EMAIL', 'PHONE'];
 const HAS_PLACEHOLDER = ['TEXT_INPUT', 'TEXT_AREA', 'NUMBER', 'EMAIL', 'PHONE', 'DATE'];
-const DISPLAY_ONLY = ['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER'];
+const DISPLAY_ONLY = ['SECTION_HEADER', 'PARAGRAPH', 'LABEL', 'DIVIDER', 'SIGNATURE', 'INITIALS'];
 
 export default function FieldConfigPanel({ style }) {
   const { getSelectedField, updateField, removeField, clearSelection } = useEFormsDesignerStore();
@@ -104,20 +104,28 @@ export default function FieldConfigPanel({ style }) {
 
         {/* Column span */}
         <Field label="Width">
-          <div className="flex gap-1 flex-wrap">
-            {COL_SPANS.map((cs) => (
-              <button
-                key={cs.value}
-                onClick={() => update({ colSpan: cs.value })}
-                className={`px-2 py-1 text-xs rounded border transition-colors ${
-                  field.colSpan === cs.value
-                    ? 'bg-indigo-600 border-indigo-600 text-white'
-                    : 'border-gray-300 text-gray-600 hover:border-indigo-400'
-                }`}
-              >
-                {cs.label}
-              </button>
-            ))}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                {field.colSpan || 6}/12 · {Math.round(((field.colSpan || 6) / 12) * 100)}%
+              </span>
+              <span className="text-[10px] text-gray-400">drag right edge on canvas</span>
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {COL_SPANS.map((cs) => (
+                <button
+                  key={cs.value}
+                  onClick={() => update({ colSpan: cs.value })}
+                  className={`px-2 py-1 text-xs rounded border transition-colors ${
+                    field.colSpan === cs.value
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'border-gray-300 text-gray-600 hover:border-indigo-400'
+                  }`}
+                >
+                  {cs.label}
+                </button>
+              ))}
+            </div>
           </div>
         </Field>
 
@@ -125,6 +133,17 @@ export default function FieldConfigPanel({ style }) {
         {!isDisplayOnly && (
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-700">Required</span>
+            <Toggle
+              checked={field.required}
+              onChange={(v) => update({ required: v })}
+            />
+          </div>
+        )}
+
+        {/* Bold toggle — for LABEL type (reuses 'required' field as bold flag) */}
+        {field.type === 'LABEL' && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">Bold</span>
             <Toggle
               checked={field.required}
               onChange={(v) => update({ required: v })}

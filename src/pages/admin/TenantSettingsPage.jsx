@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Loader2, Save, Globe, Mail, Image, Clock, RotateCcw, PanelLeft, MousePointer, Type, LayoutDashboard, Palette } from 'lucide-react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { Loader2, Save, Globe, Mail, Image, Clock, RotateCcw, PanelLeft, MousePointer, Type, LayoutDashboard, Palette, Scan } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTenantConfig, useBulkUpdateConfig, useResetConfigToDefaults } from '../../hooks/useAdmin';
 import useTenantStore from '../../store/tenantStore';
+
+const OcrEngineSettingsTab = lazy(() => import('./OcrEngineSettingsTab'));
 
 const TIMEZONES = [
   'UTC',
@@ -14,36 +16,60 @@ const TIMEZONES = [
 ];
 
 // ── Config field definitions grouped into sections ──────────────────────────
-const SECTIONS = [
+// ── Settings organized by tab ────────────────────────────────────────────────
+const TABS = [
   {
-    title: 'Organisation',
-    description: 'General tenant identity and contact',
-    fields: [
-      { key: 'tenant.name',          label: 'Organisation Name',  type: 'text',     icon: Globe,    placeholder: 'Acme Financial Services', description: 'Displayed in sidebar and emails' },
-      { key: 'tenant.logo_url',      label: 'Logo URL',           type: 'logo',     icon: Image,    placeholder: 'https://cdn.example.com/logo.png', description: 'Public URL (PNG, SVG recommended)' },
-      { key: 'tenant.support_email', label: 'Support Email',      type: 'email',    icon: Mail,     placeholder: 'support@example.com', description: 'Shown to users for help and contact' },
-      { key: 'tenant.timezone',      label: 'Default Timezone',   type: 'timezone', icon: Clock,    description: 'Used for document timestamps and scheduled jobs' },
+    key: 'general',
+    label: 'General',
+    icon: Globe,
+    sections: [
+      {
+        title: 'Organisation',
+        description: 'Tenant identity and contact information',
+        fields: [
+          { key: 'tenant.name',          label: 'Organisation Name',  type: 'text',     icon: Globe,    placeholder: 'Acme Financial Services', description: 'Displayed in sidebar and emails' },
+          { key: 'tenant.logo_url',      label: 'Logo URL',           type: 'logo',     icon: Image,    placeholder: 'https://cdn.example.com/logo.png', description: 'Public URL (PNG, SVG recommended)' },
+          { key: 'tenant.support_email', label: 'Support Email',      type: 'email',    icon: Mail,     placeholder: 'support@example.com', description: 'Shown to users for help and contact' },
+          { key: 'tenant.timezone',      label: 'Default Timezone',   type: 'timezone', icon: Clock,    description: 'Used for document timestamps and scheduled jobs' },
+        ],
+      },
     ],
   },
   {
-    title: 'Navigation & Header',
-    description: 'Sidebar and header bar appearance',
-    fields: [
-      { key: 'theme.sidebar_bg',     label: 'Sidebar Background',    type: 'color', icon: PanelLeft,     description: 'Sidebar gradient base colour' },
-      { key: 'theme.sidebar_active', label: 'Sidebar Active Item',   type: 'color', icon: MousePointer,  description: 'Active nav highlight and badges' },
-      { key: 'theme.header_bg',      label: 'Header Background',     type: 'color', icon: LayoutDashboard, description: 'Top header bar background' },
-      { key: 'theme.header_text',    label: 'Header Text',           type: 'color', icon: Type,          description: 'Header title and date text colour' },
-    ],
+    key: 'ocr-engine',
+    label: 'OCR Engine',
+    icon: Scan,
+    sections: [],  // Rendered by OcrEngineSettingsTab component
   },
   {
-    title: 'Main Content',
-    description: 'Buttons, links, and page background',
-    fields: [
-      { key: 'theme.accent',   label: 'Accent Colour',     type: 'color', icon: Palette,         description: 'Buttons, links, focus rings, active states' },
-      { key: 'theme.page_bg',  label: 'Page Background',   type: 'color', icon: LayoutDashboard, description: 'Main content area background' },
+    key: 'appearance',
+    label: 'Appearance',
+    icon: Palette,
+    sections: [
+      {
+        title: 'Navigation & Header',
+        description: 'Sidebar and header bar colours',
+        fields: [
+          { key: 'theme.sidebar_bg',     label: 'Sidebar Background',    type: 'color', icon: PanelLeft,     description: 'Sidebar gradient base colour' },
+          { key: 'theme.sidebar_active', label: 'Sidebar Active Item',   type: 'color', icon: MousePointer,  description: 'Active nav highlight and badges' },
+          { key: 'theme.header_bg',      label: 'Header Background',     type: 'color', icon: LayoutDashboard, description: 'Top header bar background' },
+          { key: 'theme.header_text',    label: 'Header Text',           type: 'color', icon: Type,          description: 'Header title and date text colour' },
+        ],
+      },
+      {
+        title: 'Main Content',
+        description: 'Buttons, links, and page background',
+        fields: [
+          { key: 'theme.accent',   label: 'Accent Colour',     type: 'color', icon: Palette,         description: 'Buttons, links, focus rings, active states' },
+          { key: 'theme.page_bg',  label: 'Page Background',   type: 'color', icon: LayoutDashboard, description: 'Main content area background' },
+        ],
+      },
     ],
   },
 ];
+
+// Flatten for save/load — backwards compatible
+const SECTIONS = TABS.flatMap(t => t.sections);
 
 const ALL_FIELDS = SECTIONS.flatMap(s => s.fields);
 
@@ -56,12 +82,6 @@ function extractValue(configData, key) {
   return configData[key] ?? '';
 }
 
-function extractDefault(configData, key) {
-  if (!configData || !Array.isArray(configData)) return '';
-  const item = configData.find(c => c.key === key || c.configKey === key);
-  return item?.defaultValue ?? '';
-}
-
 export default function TenantSettingsPage() {
   const { data: configData, isLoading } = useTenantConfig();
   const bulkUpdate = useBulkUpdateConfig();
@@ -70,6 +90,7 @@ export default function TenantSettingsPage() {
 
   const [values, setValues] = useState({});
   const [dirty, setDirty] = useState(false);
+  const [activeTab, setActiveTab] = useState('general');
 
   // Build defaults map from backend data
   const defaults = {};
@@ -84,6 +105,7 @@ export default function TenantSettingsPage() {
     ALL_FIELDS.forEach(f => {
       initial[f.key] = extractValue(configData, f.key);
     });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setValues(initial);
     setDirty(false);
   }, [configData]);
@@ -160,19 +182,41 @@ export default function TenantSettingsPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-0 border-b border-gray-200 mb-6">
+        {/* eslint-disable-next-line no-unused-vars */}
+        {TABS.map(({ key, label, icon: TabIcon }) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors
+              ${activeTab === key
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+            <TabIcon size={14} />
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Two-column: settings left, preview right (sticky) */}
       <div className="flex gap-6 items-start">
 
-      {/* Left: Settings (scrollable) */}
+      {/* Left: Settings for active tab */}
       <div className="flex-1 min-w-0 space-y-6">
-        {SECTIONS.map(section => (
+        {/* OCR Engine tab — rendered by dedicated component */}
+        {activeTab === 'ocr-engine' && (
+          <Suspense fallback={<div className="flex items-center justify-center py-12 text-gray-400"><Loader2 size={20} className="animate-spin mr-2" /> Loading OCR settings...</div>}>
+            <OcrEngineSettingsTab />
+          </Suspense>
+        )}
+        {(TABS.find(t => t.key === activeTab)?.sections || []).map(section => (
           <div key={section.title}>
             <div className="mb-3">
               <h3 className="text-sm font-semibold text-gray-800">{section.title}</h3>
               <p className="text-xs text-gray-400">{section.description}</p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
-              {section.fields.map(({ key, label, type, icon: Icon, placeholder, description }) => {
+              {section.fields.map((field) => {
+                const { key, label, type, icon: Icon, placeholder, description } = field;
                 const isModified = defaults[key] !== undefined && values[key] !== defaults[key];
 
                 // ── Color fields: compact single-row layout ──
@@ -259,7 +303,7 @@ export default function TenantSettingsPage() {
                           </div>
                         )}
 
-                        {(type === 'text' || type === 'email') && (
+                        {(type === 'text' || type === 'email' || type === 'password') && (
                           <input
                             type={type}
                             value={values[key] || ''}
@@ -267,6 +311,19 @@ export default function TenantSettingsPage() {
                             placeholder={placeholder}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
+                        )}
+
+                        {type === 'select' && (
+                          <select
+                            value={values[key] || ''}
+                            onChange={e => set(key, e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select...</option>
+                            {(field.options || []).map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
                         )}
                       </div>
                     </div>
@@ -278,8 +335,8 @@ export default function TenantSettingsPage() {
         ))}
       </div>
 
-      {/* Right: Sticky live preview */}
-      <div className="w-72 flex-shrink-0 sticky top-6">
+      {/* Right: Sticky live preview (only on general/appearance tabs) */}
+      {(activeTab === 'general' || activeTab === 'appearance') && <div className="w-72 flex-shrink-0 sticky top-6">
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="px-4 py-2.5 border-b border-gray-100">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Live Preview</p>
@@ -369,7 +426,7 @@ export default function TenantSettingsPage() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       </div>
 

@@ -1,4 +1,4 @@
-import { Bell, HelpCircle, ChevronDown, LogOut, CheckCheck, ExternalLink } from 'lucide-react'
+import { Bell, HelpCircle, ChevronDown, LogOut, CheckCheck, ExternalLink, Menu } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useOktaAuth } from '@okta/okta-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -30,7 +30,8 @@ const PAGE_META = {
   '/admin/segments':               { title: 'Segments',          sub: 'Business segment hierarchy (Retail, Commercial, SMB)' },
   '/admin/product-lines':          { title: 'Product Lines',     sub: 'Product line classification within segments' },
   '/admin/audit':                  { title: 'Audit Log',         sub: 'System-wide audit trail and activity history' },
-  '/admin/ocr-templates':          { title: 'OCR Templates',     sub: 'Manage extraction templates for document categories' },
+  '/admin/ocr-pipeline':           { title: 'OCR Pipeline',      sub: 'Field mappings, extraction templates, confidence scoring, training data' },
+  '/admin/integrations':           { title: 'Integrations',      sub: 'Configure external services and API connections' },
   '/admin/integrations/docusign':  { title: 'DocuSign Settings', sub: 'Configure DocuSign JWT grant integration' },
   '/admin/notifications':          { title: 'Notification Preferences', sub: 'Manage alert and notification settings' },
   '/admin/email-templates':        { title: 'Email Templates',          sub: 'Manage email templates for notifications' },
@@ -65,7 +66,7 @@ function getInitials(displayName) {
   return parts[0].charAt(0).toUpperCase()
 }
 
-export default function Header({ pathname }) {
+export default function Header({ pathname, isMobile, onMenuToggle }) {
   const { user }          = useUserStore()
   const { oktaAuth }      = useOktaAuth()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -93,16 +94,24 @@ export default function Header({ pathname }) {
   }
 
   return (
-    <header className="h-16 border-b border-gray-100
-                       flex items-center justify-between px-6 flex-shrink-0
+    <header className="h-14 md:h-16 border-b border-gray-100
+                       flex items-center justify-between px-3 md:px-6 flex-shrink-0
                        shadow-sm"
             style={{ backgroundColor: 'var(--color-header-bg, #ffffff)' }}>
 
       {/* ── Page title ───────────────────────────────────────── */}
-      <div className="flex items-center gap-4">
-        <div className="w-0.5 h-8 rounded-full bg-accent-500 flex-shrink-0" />
+      <div className="flex items-center gap-2 md:gap-4">
+        {/* Hamburger menu — mobile only */}
+        {isMobile && (
+          <button onClick={onMenuToggle}
+            className="p-2 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            aria-label="Toggle navigation menu">
+            <Menu size={20} />
+          </button>
+        )}
+        <div className="w-0.5 h-8 rounded-full bg-accent-500 flex-shrink-0 hidden md:block" />
         <div>
-          <h1 className="text-lg font-bold leading-tight" style={{ color: 'var(--color-header-text, #111827)' }}>
+          <h1 className="text-sm md:text-lg font-bold leading-tight" style={{ color: 'var(--color-header-text, #111827)' }}>
             {isDashboard && firstName ? `Welcome back, ${firstName}` : meta.title}
           </h1>
           <p className="text-[11px] text-gray-400 font-medium hidden sm:block">

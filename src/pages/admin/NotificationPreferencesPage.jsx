@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell, Mail, Eye, Edit2, Check, X, Loader2, Code } from 'lucide-react'
+import DOMPurify from 'dompurify'
 import toast from 'react-hot-toast'
 import {
   getNotificationPreferences, setNotificationPreference,
@@ -17,10 +18,15 @@ import {
 import useUserStore from '../../store/userStore'
 
 const CATEGORIES = [
-  { key: 'TASK_ASSIGNED',   label: 'Task Assigned',     desc: 'When a review task is assigned to your role' },
-  { key: 'FORM_APPROVED',   label: 'Form Approved',     desc: 'When your form submission is approved' },
-  { key: 'FORM_REJECTED',   label: 'Form Rejected',     desc: 'When your form submission is rejected' },
-  { key: 'WORKFLOW_UPDATE', label: 'Workflow Update',   desc: 'When your submission progresses through a workflow step' },
+  { key: 'TASK_ASSIGNED',        label: 'Task Assigned',              desc: 'When a review task is assigned to you or your role' },
+  { key: 'CASE_ASSIGNED',        label: 'Case Assigned',              desc: 'When a case is assigned to you or your group' },
+  { key: 'DOCUMENT_CLASSIFIED',  label: 'Document Classified',        desc: 'When a document you uploaded is auto-classified or manually classified' },
+  { key: 'BATCH_COMPLETED',      label: 'Batch Completed',            desc: 'When a batch upload job you created finishes processing' },
+  { key: 'BATCH_FAILURE',        label: 'Batch Failure',              desc: 'When items in your batch job fail (corrupt files, OCR errors)' },
+  { key: 'FORM_APPROVED',        label: 'Form Approved',              desc: 'When your form submission is approved' },
+  { key: 'FORM_REJECTED',        label: 'Form Rejected',              desc: 'When your form submission is rejected' },
+  { key: 'WORKFLOW_UPDATE',      label: 'Workflow Update',            desc: 'When your submission progresses through a workflow step' },
+  { key: 'CLASSIFICATION_REVIEW', label: 'Classification Review',     desc: 'When documents need manual classification or customer identification' },
 ]
 
 const CHANNELS = [
@@ -202,7 +208,7 @@ function EmailTemplatesSection() {
                 </div>
                 {previewMode ? (
                   <div className="border border-gray-200 rounded-lg p-4 bg-white min-h-[200px] max-h-[400px] overflow-auto"
-                    dangerouslySetInnerHTML={{ __html: form.bodyTemplate }} />
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(form.bodyTemplate) }} />
                 ) : (
                   <textarea value={form.bodyTemplate}
                     onChange={e => setForm(f => ({ ...f, bodyTemplate: e.target.value }))}
@@ -214,7 +220,7 @@ function EmailTemplatesSection() {
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs font-semibold text-gray-600 mb-1">Available Variables</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {['taskName', 'documentName', 'decision', 'comment', 'count', 'items', 'appUrl'].map(v => (
+                  {['taskName', 'documentName', 'categoryName', 'customerName', 'batchName', 'decision', 'comment', 'count', 'appUrl'].map(v => (
                     <span key={v} className="text-[10px] font-mono bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded">
                       {'{{' + v + '}}'}
                     </span>

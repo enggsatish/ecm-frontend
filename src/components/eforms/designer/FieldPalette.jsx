@@ -6,7 +6,7 @@
 import {
   Type, AlignLeft, Hash, Mail, Phone, Calendar,
   ChevronDown, ToggleLeft, CheckSquare, List,
-  Minus, Square, SeparatorHorizontal,
+  Minus, Square, SeparatorHorizontal, Tag, PenTool, FileSignature, AtSign,
 } from 'lucide-react';
 
 const FIELD_GROUPS = [
@@ -35,7 +35,16 @@ const FIELD_GROUPS = [
     items: [
       { type: 'SECTION_HEADER',label: 'Section Header', icon: Square },
       { type: 'PARAGRAPH',     label: 'Paragraph',      icon: AlignLeft },
+      { type: 'LABEL',         label: 'Label',          icon: Tag },
       { type: 'DIVIDER',       label: 'Divider',        icon: SeparatorHorizontal },
+    ],
+  },
+  {
+    group: 'eSign',
+    items: [
+      { type: 'SIGNATURE',    label: 'Signature',      icon: PenTool },
+      { type: 'INITIALS',     label: 'Initials',       icon: FileSignature },
+      { type: 'SIGNER_EMAIL', label: 'Signer Email',   icon: AtSign },
     ],
   },
 ];

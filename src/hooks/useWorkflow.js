@@ -25,13 +25,14 @@ import * as api from '../api/workflowApi'
 
 // ─── Query Keys ───────────────────────────────────────────────────────────────
 export const workflowKeys = {
-  inbox:       () => ['workflow', 'inbox'],
-  tasks:       () => ['workflow', 'tasks', 'my'],
-  instances:   (params) => ['workflow', 'instances', params],
-  instance:    (id) => ['workflow', 'instance', id],
-  definitions: () => ['workflow', 'definitions'],
-  groups:      () => ['workflow', 'groups'],
-  categories:  () => ['workflow', 'categories', 'mappings'],
+  inbox:        () => ['workflow', 'inbox'],
+  tasks:        () => ['workflow', 'tasks', 'my'],
+  instances:    (params) => ['workflow', 'instances', params],
+  instance:     (id) => ['workflow', 'instance', id],
+  runtimeState: (id) => ['workflow', 'runtime-state', id],
+  definitions:  () => ['workflow', 'definitions'],
+  groups:       () => ['workflow', 'groups'],
+  categories:   () => ['workflow', 'categories', 'mappings'],
 }
 
 // ─── Inbox / Tasks ────────────────────────────────────────────────────────────
@@ -284,5 +285,21 @@ export function useDeleteCategoryMapping() {
       toast.success('Mapping deleted')
     },
     onError: (err) => toast.error(err?.message || 'Failed to delete mapping'),
+  })
+}
+
+// ─── Runtime State (BPMN viewer) ──────────────────────────────────────────────
+
+/** Fetches runtime state for BPMN viewer overlays. Polls every 10s while ACTIVE. */
+export function useWorkflowRuntimeState(instanceId) {
+  return useQuery({
+    queryKey: workflowKeys.runtimeState(instanceId),
+    queryFn: () => api.getWorkflowRuntimeState(instanceId),
+    enabled: !!instanceId,
+    staleTime: 10_000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'ACTIVE' || status === 'INFO_REQUESTED' ? 10_000 : false
+    },
   })
 }

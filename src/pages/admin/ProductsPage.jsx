@@ -198,7 +198,7 @@ function DocumentChecklist({ product }) {
 // ── Detail Side Panel ──────────────────────────────────────────────────────
 function ProductPanel({ productId, onClose }) {
   const { data: product, isLoading } = useProduct(productId);
-  const { data: wfDefs } = useWorkflowDefinitions();
+  useWorkflowDefinitions();
   const { data: editSegments = [] } = useQuery({
     queryKey: ['admin', 'segments'],
     queryFn: () => apiClient.get('/api/admin/segments').then(r => r.data?.data ?? r.data ?? []),
@@ -507,7 +507,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState(EMPTY);
 
   const { data, isLoading } = useProducts({ isActive: activeOnly || undefined, page, size: 20 });
-  const { data: wfDefs } = useWorkflowDefinitions();
+  useWorkflowDefinitions();
   const { data: segments = [] } = useQuery({
     queryKey: ['admin', 'segments'],
     queryFn: () => apiClient.get('/api/admin/segments').then(r => r.data?.data ?? r.data ?? []),

@@ -11,7 +11,7 @@
  * When activePanel === 'rules'    → canvas is replaced by RuleBuilder
  * When activePanel === 'settings' → right panel shows FormSettingsPanel
  */
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Save, Eye, Globe, Settings, Zap, ArrowLeft, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -22,6 +22,7 @@ import {
   useCreateFormDefinition,
   useUpdateFormDefinition,
   usePublishForm,
+  useCloneForm,
 } from '../../hooks/useEForms';
 
 import FieldPalette      from '../../components/eforms/designer/FieldPalette';
@@ -39,7 +40,6 @@ export default function FormDesignerPage() {
   const [previewMode, setPreviewMode] = useState(false);
   const [leftW, setLeftW] = useState(208);
   const [rightW, setRightW] = useState(320);
-  const dragRef = useRef(null);
 
   const startDrag = useCallback((side) => (e) => {
     e.preventDefault();
@@ -84,6 +84,7 @@ export default function FormDesignerPage() {
   const createMutation = useCreateFormDefinition();
   const updateMutation = useUpdateFormDefinition();
   const publishMutation = usePublishForm();
+  const cloneMutation = useCloneForm();
 
   // Initialise store from server data (or blank for new forms)
   useEffect(() => {
@@ -120,6 +121,19 @@ export default function FormDesignerPage() {
       }
     : null;
 
+  // Build docuSignConfig only when signature is required — sending null
+  // tells the backend "no e-signature attached" (same pattern as workflowConfig).
+  // Signer identity + the signing-request email are supplied at fill time,
+  // not here — this only carries form-level policy.
+  const docuSignConfig = meta.docusignRequiresSignature
+    ? {
+        requiresSignature: true,
+        expiryDays:        meta.docusignExpiryDays || 30,
+        allowDecline:      meta.docusignAllowDecline,
+        allowReassign:     meta.docusignAllowReassign,
+      }
+    : null;
+
   return {
     name:            meta.name,
     description:     meta.description     || undefined,
@@ -128,6 +142,7 @@ export default function FormDesignerPage() {
     tags:            meta.tags?.length ? meta.tags : undefined,
     schema,
     workflowConfig,
+    docuSignConfig,
   };
 };
 
@@ -263,7 +278,7 @@ export default function FormDesignerPage() {
         {/* Handle clone vs save and publish button. */}
         {isPublished ? (
           <button
-            onClick={() => cloneNutation.mutate (id, {
+            onClick={() => cloneMutation.mutate (id, {
               onSuccess: (res) =>  navigate(`/eforms/designer/${res.data.id}`)
             })}> Clone to Edit </button>
         ) : (

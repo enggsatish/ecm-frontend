@@ -19,7 +19,7 @@
  *                     (preview mode / standalone use).
  *   onBack          - () => void — Back button handler
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, Save, Send, ArrowRight, Loader2 } from 'lucide-react';
 import FieldRenderer from './FieldRenderer';
 import { evaluateRules } from '../../../utils/ruleEngine';
@@ -28,6 +28,7 @@ import { useSubmitForm } from '../../../hooks/useEForms';
 export default function FormRenderer({
   schema,
   formKey,
+  // eslint-disable-next-line no-unused-vars
   definitionId,
   readOnly = false,
   initialData = {},
@@ -59,11 +60,12 @@ export default function FormRenderer({
   const ruleResult = evaluateRules(schema, formData);
   const { hidden, required: dynRequired, blocking, computed } = ruleResult;
 
-  const computedJson = useMemo(() => JSON.stringify(computed), [computed]);
+  const computedJson = JSON.stringify(computed);
 
   useEffect(() => {
     const vals = JSON.parse(computedJson);
     if (Object.keys(vals).length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData((prev) => ({ ...prev, ...vals }));
     }
   }, [computedJson]);
@@ -211,7 +213,7 @@ export default function FormRenderer({
                 {visibleFields.map((field) => {
                   const isReq = field.required || dynRequired.has(field.key);
                   const err = fieldErrors[field.key];
-                  const isDisplayOnly = ['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER'].includes(field.type);
+                  const isDisplayOnly = ['SECTION_HEADER', 'PARAGRAPH', 'LABEL', 'DIVIDER', 'SIGNATURE', 'INITIALS'].includes(field.type);
                   const isCheckbox = field.type === 'CHECKBOX';
                   const skipLabel = isDisplayOnly || isCheckbox;
 

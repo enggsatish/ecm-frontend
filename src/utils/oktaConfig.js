@@ -18,13 +18,13 @@ export const oktaAuth = new OktaAuth({
   issuer,
   clientId,
   redirectUri: window.location.origin + '/login/callback',
-  scopes: ['openid', 'profile', 'email'],
+  scopes: ['openid', 'profile', 'email', 'offline_access'],  // offline_access → enables refresh tokens
   pkce: true,
   responseType: 'code',
   tokenManager: {
     storage: 'sessionStorage',
-    autoRenew: true,           // silently renew tokens before expiry
-    expireEarlySeconds: 300,   // start renewal 5 minutes before expiry
+    autoRenew: true,           // RE-ENABLED — with refresh tokens this works reliably
+    expireEarlySeconds: 60,    // Renew 60s before expiry
     syncStorage: true,
   },
   cookies: {
@@ -46,20 +46,20 @@ function fireSessionExpired() {
   window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
 }
 
-// Listen for token renewal failures from Okta SDK
-oktaAuth.tokenManager.on('error', (err) => {
-  // 'login_required' means the Okta session is dead — can't silently renew
-  if (err?.errorCode === 'login_required' || err?.message?.includes('login_required')) {
-    console.warn('[OktaAuth] Silent renewal failed — Okta session expired')
-    fireSessionExpired()
-  }
+// With autoRenew:true, the SDK renews tokens automatically via refresh token.
+// These handlers are for logging and fallback only.
+oktaAuth.tokenManager.on('renewed', (key) => {
+  console.debug(`[OktaAuth] Token renewed: ${key}`)
 })
 
-// Also fire on token removal (expired and couldn't renew)
+oktaAuth.tokenManager.on('error', (err) => {
+  console.warn('[OktaAuth] Token manager error:', err?.errorCode || err?.message)
+  // SessionWarningModal listens for this event and shows the warning if needed
+})
+
 oktaAuth.tokenManager.on('expired', (key) => {
   if (key === 'accessToken') {
-    console.warn('[OktaAuth] Access token expired — attempting renewal')
-    // autoRenew will try to renew. If it fails, the 'error' handler above fires.
+    console.warn('[OktaAuth] Access token expired — autoRenew will attempt refresh')
   }
 })
 

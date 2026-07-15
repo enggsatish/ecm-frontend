@@ -9,7 +9,7 @@
  *   <PartySearch> widget (components/common/PartySearch). Now fetches lazily on keystroke.
  *   partyExternalId sent to backend is unchanged — selectedParty?.externalId.
  */
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { Upload, X, CheckCircle2, AlertCircle, Loader2, ChevronUp, ChevronDown, Layers, GitBranch, Building2 } from 'lucide-react'
 import { uploadDocuments } from '../../api/documentsApi'
 import { useHierarchy, useCategories } from '../../hooks/useAdmin'
@@ -138,16 +138,14 @@ export default function DocumentUpload({ onUploadComplete }) {
     if (!ready.length || uploading) return
     setUploading(true)
 
-    // Resolve codes from the hierarchy tree for MinIO path building
-    const selectedPl = productLines.find(pl => String(pl.id) === String(productLineId))
-
+    // v5.0: IDs only — MinIO uses UUID-based flat storage, no hierarchy codes needed
+    const now = new Date()
+    const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     const uploadMeta = {
-      name:            docName || undefined,
+      name:            docName || undefined, // per-file default applied below
       categoryId:      categoryId || undefined,
       segmentId:       segmentId || undefined,
       productLineId:   productLineId || undefined,
-      segmentCode:     selectedSegment?.segmentCode || undefined,
-      productLineCode: selectedPl?.code || undefined,
       partyExternalId: selectedParty?.externalId || selectedParty?.customerRef || undefined,
     }
 
@@ -156,8 +154,14 @@ export default function DocumentUpload({ onUploadComplete }) {
 
     await Promise.allSettled(ready.map(async ({ file }) => {
       patchFile(file.name, { status: 'uploading', progress: 0 })
+      // Default name: strip extension from filename + timestamp
+      const fileMeta = { ...uploadMeta }
+      if (!fileMeta.name) {
+        const base = file.name.replace(/\.[^.]+$/, '')
+        fileMeta.name = `${base} - ${ts}`
+      }
       try {
-        await uploadDocuments([file], uploadMeta, pct => patchFile(file.name, { progress: pct }))
+        await uploadDocuments([file], fileMeta, pct => patchFile(file.name, { progress: pct }))
         patchFile(file.name, { status: 'done', progress: 100 })
         successCount++
       } catch (err) {
@@ -170,10 +174,19 @@ export default function DocumentUpload({ onUploadComplete }) {
     resetInput()
     if (successCount > 0 && failCount === 0) {
       toast.success(`${successCount} file${successCount !== 1 ? 's' : ''} uploaded`)
+      // Reset all form state after successful upload
+      setFileStates([])
+      setDocName('')
+      setCategoryId('')
+      setSegmentId('')
+      setProductLineId('')
+      setSelectedParty(null)
       onUploadComplete?.()
     } else if (successCount > 0) {
       toast.success(`${successCount} uploaded`)
       toast.error(`${failCount} failed`)
+      // Clear only completed files — keep failed ones for retry
+      setFileStates(prev => prev.filter(f => f.status !== 'done'))
       onUploadComplete?.()
     } else {
       toast.error(`Upload failed for all ${failCount} file${failCount !== 1 ? 's' : ''}`)

@@ -11,21 +11,25 @@ import {
 
 // ─── Module display config ────────────────────────────────────────────────────
 const MODULE_LABELS = {
-  DOCUMENTS: { label: 'Documents',  color: 'blue'   },
-  WORKFLOW:  { label: 'Workflow',   color: 'purple' },
-  EFORMS:    { label: 'eForms',     color: 'green'  },
-  ADMIN:     { label: 'Admin',      color: 'red'    },
-  OCR:       { label: 'OCR',        color: 'orange' },
-  ARCHIVE:   { label: 'Archive',    color: 'gray'   },
+  DOCUMENTS: { label: 'Documents',        color: 'blue'   },
+  WORKFLOW:  { label: 'Workflow',         color: 'purple' },
+  EFORMS:    { label: 'eForms',           color: 'green'  },
+  CASE:      { label: 'Case Management',  color: 'teal'   },
+  ADMIN:     { label: 'Admin',            color: 'red'    },
+  OCR:       { label: 'OCR',              color: 'orange' },
+  ARCHIVE:   { label: 'Archive',          color: 'gray'   },
+  BATCH:     { label: 'Batch Processing', color: 'cyan'   },
 }
 
 const COLOR_CLASSES = {
   blue:   { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   dot: 'bg-blue-500'   },
   purple: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
   green:  { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  dot: 'bg-green-500'  },
+  teal:   { bg: 'bg-teal-50',   text: 'text-teal-700',   border: 'border-teal-200',   dot: 'bg-teal-500'   },
   red:    { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-500'    },
   orange: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
   gray:   { bg: 'bg-gray-50',   text: 'text-gray-700',   border: 'border-gray-200',   dot: 'bg-gray-400'   },
+  cyan:   { bg: 'bg-cyan-50',   text: 'text-cyan-700',   border: 'border-cyan-200',   dot: 'bg-cyan-500'   },
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────

@@ -77,6 +77,22 @@ export const getFormSchema = (formKey) =>
 export const getFormSchemaVersion = (formKey, version) =>
   apiClient.get(`${BASE}/render/${formKey}/v/${version}`)
 
+/**
+ * Download a blank, unfilled PDF of the form — for branch walk-in scenarios
+ * where the form is printed and filled by hand instead of digitally.
+ */
+export const downloadBlankFormPdf = async (formKey) => {
+  const resp = await apiClient.get(`${BASE}/render/${formKey}/blank-pdf`, {
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(resp.data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${formKey}-blank.pdf`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ─── Form Submissions (authenticated) ────────────────────────────────────────
 
 /** Submit or save draft. Pass { draft: true } in payload for draft saves. */
@@ -98,3 +114,31 @@ export const getSubmission = (id) =>
 
 export const withdrawSubmission = (id) =>
   apiClient.post(`${BASE}/submissions/${id}/withdraw`)
+
+/**
+ * Upload a manually-signed replacement for a submission that requires a
+ * signature — the print/sign-by-hand/scan alternative to DocuSign.
+ */
+export const uploadSignedCopy = (id, file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiClient.post(`${BASE}/submissions/${id}/signed-copy`, formData, {
+    headers: { 'Content-Type': undefined },
+  })
+}
+
+/**
+ * Download a submission's PDF (regenerated on demand — works for any
+ * submission with a schema snapshot, not just DocuSign-signed ones).
+ */
+export const downloadSubmissionPdf = async (id, filename) => {
+  const resp = await apiClient.get(`${BASE}/submissions/${id}/pdf`, {
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(resp.data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename ?? `submission-${id}.pdf`
+  a.click()
+  URL.revokeObjectURL(url)
+}

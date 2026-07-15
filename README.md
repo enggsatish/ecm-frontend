@@ -27,6 +27,9 @@
   - [Workflow](#workflow-module)
   - [eForms](#eforms-module)
   - [Admin](#admin-module)
+- [Document Pipeline & Status](#document-pipeline--status)
+- [Case Management UI](#case-management-ui)
+- [Document Locking UI](#document-locking-ui)
 - [eForm Designer Deep Dive](#eform-designer-deep-dive)
 - [Component Library](#component-library)
 - [Known Issues & Bugs](#known-issues--bugs)
@@ -142,6 +145,9 @@ ecm-frontend/
     │   ├── workflow/
     │   │   ├── WorkflowPage.jsx
     │   │   └── WorkflowDesignerPage.jsx
+    │   ├── cases/
+    │   │   ├── CasesPage.jsx              ← Case management with checklist, timeline, notes, overrides
+    │   │   └── CaseDetailPage.jsx         ← Full-page case detail with state machine transitions
     │   ├── eforms/
     │   │   ├── EFormsPage.jsx              ← Published form catalogue
     │   │   ├── FormFillPage.jsx            ← Fill + submit a form
@@ -163,7 +169,9 @@ ecm-frontend/
     │       ├── AuditLogPage.jsx
     │       ├── NotificationPreferencesPage.jsx
     │       ├── EmailTemplatesPage.jsx
-    │       └── CustomerPortfolioPage.jsx
+    │       ├── CustomerPortfolioPage.jsx
+    │       ├── IntegrationsPage.jsx       ← Tabbed integrations (DocuSign + OCR Engine)
+    │       └── DocuSignSettingsPage.jsx   ← DocuSign config with email branding
     │
     └── utils/
         ├── oktaConfig.js       ← OktaAuth singleton instance
@@ -228,6 +236,13 @@ const PAGE_META = {
 }
 // /admin/users/123 → matches /admin/users (longest prefix)
 ```
+
+### API Client & Token Management
+
+- `apiClient.js` — Axios instance with automatic token renewal on 401
+- Silent token refresh via Okta's `autoRenew` + `expireEarlySeconds`
+- `SessionExpiredModal` component for graceful session expiry
+- All API calls go through the gateway at port 8080
 
 ---
 
@@ -645,8 +660,117 @@ The full low-code form builder. See [eForm Designer Deep Dive](#eform-designer-d
 | `/admin/notifications` | `NotificationPreferencesPage` | User notification preferences (IN_APP / EMAIL per category) |
 | `/admin/email-templates` | `EmailTemplatesPage` | Email template editor (HTML subject + body) |
 | `/admin/customer-portfolio` | `CustomerPortfolioPage` | Customer portfolio and enrollments |
+| `/admin/integrations` | `IntegrationsPage` | Tabbed integrations (DocuSign + OCR Engine) |
+| `/admin/integrations/docusign` | `DocuSignSettingsPage` | DocuSign config with email branding |
 
 Default redirect: `/admin` → `/admin/users`
+
+---
+
+## Document Pipeline & Status
+
+### Unified Status Column
+
+Documents display a single status badge covering the full lifecycle:
+
+| Status | Badge | Description |
+|--------|-------|-------------|
+| `PENDING_OCR` | Processing (blue) | OCR extraction in progress |
+| `ACTIVE` | Active (green) | Fully processed, ready for use |
+| `OCR_FAILED` | OCR Failed (red) | Extraction failed, retry available |
+| `PENDING_SIGNATURE` | Awaiting Signature (amber) | Sent to DocuSign, waiting for signer |
+| `SIGNED` | Signed (purple) | Signed PDF received from DocuSign |
+| `SIGN_DECLINED` | Declined (red) | Signer declined |
+| `ARCHIVED` | Archived (gray) | Moved to cold storage |
+| `DELETED` | Deleted (red) | Soft-deleted |
+
+### Pipeline Visualization
+
+The document viewer modal (Pipeline tab) shows a branching graph:
+
+```
+● Uploaded → ┬─ OCR ──── Extract → Done/Failed
+             ├─ Review ── Queued → Claimed → Approved/Rejected
+             └─ eSign ─── Sent → Awaiting → Signed/Declined
+```
+
+Each branch uses color-coded nodes with timestamps and actor names.
+Nodes pulse when an action is in progress (OCR running, awaiting signature).
+
+---
+
+## Case Management UI
+
+### Case State Machine
+
+```
+NEW → IN_PROGRESS → REVIEW_PENDING → UNDER_REVIEW → PENDING_APPROVAL → APPROVED → COMPLETED
+                 ↑                          │
+                 └─── returned (with flag) ──┘
+```
+
+### Checklist Actions
+
+When a case is `NEW`, all checklist actions are disabled. User must click "Start Working" first.
+
+Once case is `IN_PROGRESS`, each checklist item shows context-aware actions:
+
+| Item State | Available Actions |
+|-----------|-------------------|
+| PENDING (Upload type) | Upload, Link Existing |
+| PENDING (eForm type) | Fill Form |
+| UPLOADED | Actions menu: Start Workflow, Send for Signature, Mark Complete, Override, Waive |
+| APPROVED | "Completed" badge + Reopen button |
+| PENDING_SIGNATURE | "Awaiting Signature" lock badge (no actions) |
+| Under Workflow | "Under Review" lock badge (no actions) |
+
+### Actions Dropdown Menu
+
+After document upload/form fill, an "Actions" dropdown replaces scattered buttons:
+
+- **Start Workflow** — auto-routes to review queue (only if workflow configured)
+- **Send for Signature** — opens DocuSign modal with placement options
+- **Mark as Complete** — self-certify (case worker takes responsibility)
+- **Admin Bypass / Request Override** — exception handling
+- **Waive Requirement** — skip this item
+
+### Send for Signature Modal
+
+Full modal with:
+- Signer email and name fields
+- Signature placement: Auto-detect / Last page / Specific position
+- Optional: Require initials, Require date signed
+- Custom email subject (defaults from admin branding config)
+
+### Add Document Request
+
+Case workers can add checklist items beyond the product template:
+- Select from existing document categories, or enter a custom name
+- Mark as required or optional
+- Visible only when case is IN_PROGRESS or UNDER_REVIEW
+
+---
+
+## Document Locking UI
+
+### Documents Page
+
+Each document row shows:
+- **Always visible**: View, Download buttons + three-dot menu (⋮)
+- **Lock badge**: Blue "You" (own lock) or amber "{name}" (someone else's lock)
+- **Case badge**: Cyan "In Case" when linked to active case
+
+### Three-Dot Menu
+
+| Menu Item | When Shown |
+|-----------|-----------|
+| Lock Document | Document is unlocked |
+| Unlock Document | You own the lock (blue text) |
+| Locked by {name} | Someone else's lock (grayed out) |
+| Archive | Admin only, not when locked by others |
+| Delete | Admin only, red, requires reason |
+
+The menu uses `position: fixed` to escape table overflow containers.
 
 ---
 

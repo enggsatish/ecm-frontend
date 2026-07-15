@@ -1,5 +1,5 @@
 import { useOktaAuth } from '@okta/okta-react'
-import { useEffect }   from 'react'
+import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import useUserStore    from '../../store/userStore'
 import { useCurrentUser } from '../../hooks/useCurrentUser'
@@ -35,11 +35,24 @@ export default function RequireAuth({ children }) {
 
   const isCallback = location.pathname === '/login/callback'
 
+  // Track whether user was ever authenticated in this browser session.
+  // This distinguishes "first visit (never logged in)" from "session expired mid-use".
+  const wasAuthenticatedRef = useRef(false)
+
+  useEffect(() => {
+    if (authState?.isAuthenticated) {
+      wasAuthenticatedRef.current = true
+    }
+  }, [authState?.isAuthenticated])
+
   useEffect(() => {
     if (!authState || isCallback) return
-    if (!authState.isAuthenticated) {
+    if (!authState.isAuthenticated && !wasAuthenticatedRef.current) {
+      // First visit, never logged in → redirect to Okta login
       oktaAuth.signInWithRedirect({ originalUri: location.pathname })
     }
+    // If wasAuthenticated = true but now not authenticated → token expired mid-session
+    // Do NOT redirect — SessionWarningModal / SessionExpiredModal will handle it
   }, [authState, oktaAuth, isCallback, location.pathname])
 
   // Auth state still initialising or on callback page
@@ -47,9 +60,14 @@ export default function RequireAuth({ children }) {
     return <LoadingScreen message="Completing sign in…" />
   }
 
-  // Not authenticated — spinner while redirect kicks in
+  // Not authenticated — first visit → spinner while redirect kicks in
+  // Mid-session expiry → keep showing the app (modals will overlay)
   if (!authState.isAuthenticated) {
-    return <LoadingScreen message="Redirecting to login…" />
+    if (!wasAuthenticatedRef.current) {
+      return <LoadingScreen message="Redirecting to login…" />
+    }
+    // Mid-session: keep rendering children — the warning/expired modal handles UX
+    // This prevents a flash of "Redirecting..." when the token just needs renewal
   }
 
   // Authenticated but user profile still loading

@@ -118,11 +118,15 @@ export default function DocuSignSettingsPage() {
     impersonatedUserId: '',
     rsaPrivateKey:     '',
     webhookHmacSecret: '',
+    companyName:       '',
+    emailSubjectTemplate: '',
+    emailBodyTemplate: '',
   })
 
   // Populate form when data loads
   useEffect(() => {
     if (!cfg) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm({
       enabled:            cfg.enabled            ?? false,
       baseUrl:            cfg.baseUrl            ?? '',
@@ -132,6 +136,9 @@ export default function DocuSignSettingsPage() {
       impersonatedUserId: cfg.impersonatedUserId ?? '',
       rsaPrivateKey:      cfg.rsaPrivateKey      ?? '',
       webhookHmacSecret:  cfg.webhookHmacSecret  ?? '',
+      companyName:        cfg.companyName        ?? '',
+      emailSubjectTemplate: cfg.emailSubjectTemplate ?? '',
+      emailBodyTemplate:  cfg.emailBodyTemplate  ?? '',
     })
   }, [cfg])
 
@@ -175,17 +182,9 @@ export default function DocuSignSettingsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">DocuSign Integration</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Configure JWT grant authentication for e-signature workflows
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <TestStatusBadge status={cfg?.testStatus} testedAt={cfg?.testedAt} />
-        </div>
+      {/* Status badge */}
+      <div className="flex items-center justify-end">
+        <TestStatusBadge status={cfg?.testStatus} testedAt={cfg?.testedAt} />
       </div>
 
       {/* Sandbox notice */}
@@ -304,6 +303,61 @@ export default function DocuSignSettingsPage() {
             form={form}
             onChange={updateSecret}
           />
+        </FieldRow>
+      </div>
+
+      {/* Email Branding */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 divide-y divide-gray-100">
+        <div className="py-3">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Email Branding
+          </h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Customize the signing email sent to recipients. Use tokens:
+            <code className="bg-gray-100 px-1 rounded mx-0.5">{'{companyName}'}</code>
+            <code className="bg-gray-100 px-1 rounded mx-0.5">{'{documentName}'}</code>
+            <code className="bg-gray-100 px-1 rounded mx-0.5">{'{signerName}'}</code>
+            <code className="bg-gray-100 px-1 rounded mx-0.5">{'{signerEmail}'}</code>
+          </p>
+        </div>
+
+        <FieldRow label="Company Name" hint="Used in email templates. Falls back to 'ECM' if empty.">
+          <TextInput
+            value={form.companyName}
+            onChange={v => update('companyName', v)}
+            placeholder="Apex Financial Services"
+          />
+        </FieldRow>
+
+        <FieldRow
+          label="Email Subject Template"
+          hint="Subject line of the signing email. Leave blank for default."
+        >
+          <TextInput
+            value={form.emailSubjectTemplate}
+            onChange={v => update('emailSubjectTemplate', v)}
+            placeholder="{companyName} — Please sign: {documentName}"
+          />
+          <p className="text-[10px] text-gray-400 mt-1">
+            Default: <code className="bg-gray-50 px-1 rounded">{'{companyName}'} — Please sign: {'{documentName}'}</code>
+          </p>
+        </FieldRow>
+
+        <FieldRow
+          label="Email Body Template"
+          hint="Short message shown above the 'Review Document' button in DocuSign's email."
+        >
+          <textarea
+            value={form.emailBodyTemplate ?? ''}
+            onChange={e => update('emailBodyTemplate', e.target.value)}
+            rows={3}
+            placeholder="Dear {signerName}, please review and sign the attached document from {companyName}."
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm
+                       focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 resize-y"
+          />
+          <p className="text-[10px] text-gray-400 mt-1">
+            Default: <code className="bg-gray-50 px-1 rounded">Please review and sign the attached document.</code>
+          </p>
         </FieldRow>
       </div>
 

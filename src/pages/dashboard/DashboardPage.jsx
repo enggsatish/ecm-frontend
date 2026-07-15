@@ -4,11 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileText as FileTextIcon, Briefcase, FolderOpen } from 'lucide-react'
 import { listDocuments } from '../../api/documentsApi'
-import { listCustomers, listCases } from '../../api/adminApi'
+import { listCustomers, listCases, getCustomer } from '../../api/adminApi'
 import { getMyTasks } from '../../api/workflowApi'
 import ErrorBoundary from '../../components/common/ErrorBoundary'
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
 function StatCard({ icon: Icon, label, value, accent, loading }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm
@@ -56,6 +57,32 @@ function DocTypeBadge({ mime }) {
 }
 
 // ── Document row ──────────────────────────────────────────────────────────────
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function CustomerBadge({ externalId }) {
+  const isUuid = UUID_RE.test(externalId)
+  const { data: searchData } = useQuery({
+    queryKey: ['customer-by-ref', externalId],
+    queryFn: () => listCustomers({ q: externalId, size: 1 }),
+    staleTime: 10 * 60_000,
+    enabled: !!externalId && !isUuid,
+  })
+  const { data: uuidData } = useQuery({
+    queryKey: ['customer-by-id', externalId],
+    queryFn: () => getCustomer(externalId),
+    staleTime: 10 * 60_000,
+    enabled: !!externalId && isUuid,
+  })
+  const list = Array.isArray(searchData) ? searchData : (searchData?.content ?? [])
+  const customer = isUuid ? uuidData : list.find(c => c.customerRef === externalId)
+  const label = customer?.displayName ?? customer?.shortName ?? externalId
+  return (
+    <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full truncate max-w-[150px]" title={label}>
+      {label}
+    </span>
+  )
+}
+
 function DocRow({ doc }) {
   const date = doc.createdAt
     ? new Date(doc.createdAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
@@ -67,11 +94,7 @@ function DocRow({ doc }) {
       <span className="flex-1 text-sm text-gray-700 truncate font-medium">
         {doc.name ?? doc.originalFilename ?? '—'}
       </span>
-      {doc.partyExternalId && (
-        <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-          {doc.partyExternalId}
-        </span>
-      )}
+      {doc.partyExternalId && <CustomerBadge externalId={doc.partyExternalId} />}
       {doc.status === 'PENDING_OCR' && (
         <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Processing</span>
       )}

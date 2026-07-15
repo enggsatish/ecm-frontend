@@ -8,14 +8,20 @@
 import { useState } from 'react'
 import { Loader2, Save, Mail, Eye, ArrowLeft, Code, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import DOMPurify from 'dompurify'
 import { useEmailTemplates, useUpdateEmailTemplate } from '../../hooks/useAdmin'
 
 const VARIABLE_HELP = {
-  OTP_VERIFICATION:   ['otp'],
-  PARTICIPANT_INVITE: ['name', 'role', 'inviteLink', 'appUrl'],
-  USER_INVITE:        ['displayName', 'role', 'signInLink', 'appUrl'],
-  TASK_ASSIGNED:      ['taskName', 'candidateGroup', 'documentName', 'appUrl'],
-  CASE_STATUS_CHANGED:['caseRef', 'customerName', 'status', 'reason', 'caseId', 'appUrl'],
+  OTP_VERIFICATION:    ['otp'],
+  PARTICIPANT_INVITE:  ['name', 'role', 'inviteLink', 'appUrl'],
+  USER_INVITE:         ['displayName', 'role', 'signInLink', 'appUrl'],
+  TASK_ASSIGNED:       ['taskName', 'candidateGroup', 'documentName', 'appUrl'],
+  CASE_STATUS_CHANGED: ['caseRef', 'customerName', 'status', 'reason', 'caseId', 'appUrl'],
+  CASE_ASSIGNED:       ['caseRef', 'customerName', 'assignedBy', 'appUrl'],
+  DOCUMENT_CLASSIFIED: ['documentName', 'categoryName', 'customerName', 'classificationSource', 'appUrl'],
+  BATCH_COMPLETED:     ['batchName', 'totalCount', 'successCount', 'failedCount', 'appUrl'],
+  BATCH_FAILURE:       ['batchName', 'failedCount', 'errorSummary', 'appUrl'],
+  CLASSIFICATION_STALE:['count', 'oldestAge', 'appUrl'],
 }
 
 export default function EmailTemplatesPage() {
@@ -122,7 +128,7 @@ export default function EmailTemplatesPage() {
               <label className="text-xs font-medium text-gray-500 block mb-1">Email Body (HTML)</label>
               {previewMode ? (
                 <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 min-h-[300px]"
-                  dangerouslySetInnerHTML={{ __html: substitutePreview(form.bodyTemplate, variables) }} />
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(substitutePreview(form.bodyTemplate, variables)) }} />
               ) : (
                 <textarea value={form.bodyTemplate || ''} onChange={e => setForm(f => ({ ...f, bodyTemplate: e.target.value }))}
                   rows={16}
@@ -214,6 +220,16 @@ function substitutePreview(template, variables) {
     status: 'Under Review',
     reason: 'Additional documents required',
     caseId: '00000000-0000-0000-0000-000000000000',
+    assignedBy: 'admin@ecm.dev',
+    categoryName: 'Identity Document',
+    classificationSource: 'Auto-classified',
+    batchName: 'Batch Upload - 2026-04-01 14:30',
+    totalCount: '25',
+    successCount: '23',
+    failedCount: '2',
+    errorSummary: '2 files failed OCR processing',
+    count: '12',
+    oldestAge: '6 hours',
   }
   for (const v of variables) {
     result = result.replaceAll('{{' + v + '}}', sampleValues[v] || v)

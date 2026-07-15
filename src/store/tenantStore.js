@@ -4,7 +4,7 @@
  * Applies branding (colors, logo, name) to the UI via CSS variables.
  */
 import { create } from 'zustand'
-import { getTenantConfig } from '../api/adminApi'
+import { getTenantBranding } from '../api/adminApi'
 
 /**
  * Generate a color scale from a hex color.
@@ -101,7 +101,7 @@ const useTenantStore = create((set) => ({
 
   loadConfig: async () => {
     try {
-      const data = await getTenantConfig()
+      const data = await getTenantBranding()
       const state = {
         name:          extractValue(data, 'tenant.name') || DEFAULTS.name,
         logoUrl:       extractValue(data, 'tenant.logo_url') || DEFAULTS.logoUrl,

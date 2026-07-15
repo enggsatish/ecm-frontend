@@ -2,21 +2,34 @@
  * FormFillPage.jsx
  * Route: /eforms/fill/:formKey
  *
- * Three-step form fill flow:
+ * Form fill flow (steps vary — Signing only appears when the form's
+ * docuSignConfig.requiresSignature is true):
  *   Step 0 — Party selector (search and pick customer/counterparty)
  *   Step 1 — Fill form fields (FormRenderer — validates, then calls onReview)
- *   Step 2 — Review & Submit (read-only summary + final submit to API)
+ *   Step 2 — Signing details (signer name/email + editable signing-request email) — conditional
+ *   Step 2 or 3 — Review & Submit (read-only summary + final submit to API)
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Building2, Send,
-  Loader2, AlertCircle, CheckCircle2, Users, FileText,
+  Loader2, AlertCircle, CheckCircle2, Users, FileText, PenTool,
 } from 'lucide-react'
-import { useFormSchema, useSubmission, useSubmitForm } from '../../hooks/useEForms'
+import { useFormSchema, useSubmission, useSubmitForm, useDocuSignEmailTemplate } from '../../hooks/useEForms'
 import toast from 'react-hot-toast'
 import FormRenderer from '../../components/eforms/renderer/FormRenderer'
 import PartySearch from '../../components/common/PartySearch'
+import useUserStore from '../../store/userStore'
+
+/** Replaces {{formName}}/{{signerName}}/{{senderName}} — matches the
+ *  double-brace convention used by ecm_core.email_templates. */
+function substituteEmailTokens(text, { formName, signerName, senderName }) {
+  if (!text) return text
+  return text
+    .replaceAll('{{formName}}', formName || 'this form')
+    .replaceAll('{{signerName}}', signerName || 'there')
+    .replaceAll('{{senderName}}', senderName || 'ECM Platform')
+}
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 function StepIndicator({ current, steps }) {
@@ -93,8 +106,122 @@ function PartyStep({ selectedParty, onSelect, onNext }) {
   )
 }
 
+// ── Step: Signing details (conditional — only when the form requires signature) ─
+function SigningStep({ formName, signing, setSigning, onBack, onNext }) {
+  const { data: template, isLoading: templateLoading } = useDocuSignEmailTemplate()
+  const { user } = useUserStore()
+  const [subjectTouched, setSubjectTouched] = useState(false)
+  const [bodyTouched,    setBodyTouched]    = useState(false)
+
+  // Pre-fill subject/body from the admin's default template once it loads,
+  // and keep them in sync with the signer name until the filler edits either
+  // field by hand (tracked via *Touched) — then their edits are left alone.
+  useEffect(() => {
+    if (!template) return
+    const ctx = { formName, signerName: signing.signerName, senderName: user?.displayName }
+    setSigning((s) => ({
+      ...s,
+      emailSubject: subjectTouched ? s.emailSubject : substituteEmailTokens(template.subjectTemplate, ctx),
+      emailBody:    bodyTouched    ? s.emailBody    : substituteEmailTokens(template.bodyTemplate, ctx),
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template, signing.signerName])
+
+  const canContinue = signing.signerName.trim() && signing.signerEmail.trim()
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+          <PenTool size={16} className="text-purple-500" />
+          Signing Details
+        </h2>
+        <p className="text-sm text-gray-500 mt-1">
+          This form requires an electronic signature. Tell us who should sign it —
+          DocuSign will email them a link once you submit.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Signer Name *</label>
+          <input
+            type="text"
+            value={signing.signerName}
+            onChange={(e) => setSigning((s) => ({ ...s, signerName: e.target.value }))}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-400"
+            placeholder="Jane Doe"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Signer Email *</label>
+          <input
+            type="email"
+            value={signing.signerEmail}
+            onChange={(e) => setSigning((s) => ({ ...s, signerEmail: e.target.value }))}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-400"
+            placeholder="jane@example.com"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Signing Request Email
+          </p>
+          {templateLoading && <Loader2 size={12} className="animate-spin text-gray-400" />}
+        </div>
+        <p className="text-[11px] text-gray-400 -mt-1.5">
+          Pre-filled from the org default (Admin → Email Templates) — edit for
+          this submission only if needed.
+        </p>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Subject</label>
+          <input
+            type="text"
+            value={signing.emailSubject}
+            onChange={(e) => { setSubjectTouched(true); setSigning((s) => ({ ...s, emailSubject: e.target.value })) }}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-indigo-400"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Message</label>
+          <textarea
+            rows={3}
+            value={signing.emailBody}
+            onChange={(e) => { setBodyTouched(true); setSigning((s) => ({ ...s, emailBody: e.target.value })) }}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white resize-none focus:outline-none focus:border-indigo-400"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between pt-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="px-4 py-2 border border-gray-300 text-gray-600 text-sm font-medium
+                     rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          ← Edit Answers
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!canContinue}
+          className="flex items-center gap-2 px-5 py-2 rounded-lg bg-blue-600
+                     text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40
+                     disabled:cursor-not-allowed transition-colors"
+        >
+          Next <ArrowRight size={15} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Step 2: Review panel ──────────────────────────────────────────────────────
-function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, submissionId, caseId, checklistItemId, onBack, onSuccess }) {
+function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, submissionId, caseId, checklistItemId, hasSignature, signing, onBack, onSuccess }) {
   const submitMutation = useSubmitForm()
 
   const handleFinalSubmit = () => {
@@ -112,6 +239,12 @@ function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, su
         ...(partyContext?.partyExternalId && { partyExternalId: partyContext.partyExternalId }),
         ...(submissionId && { existingSubmissionId: submissionId }),
         ...(caseId && { skipWorkflow: true }),  // case-linked forms — case manages review flow
+        ...(hasSignature && {
+          signerName:           signing.signerName,
+          signerEmail:          signing.signerEmail,
+          emailSubjectOverride: signing.emailSubject,
+          emailBodyOverride:    signing.emailBody,
+        }),
       },
       { onSuccess }
     )
@@ -119,9 +252,11 @@ function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, su
 
   // Flatten visible fields from schema for the review summary
   const allFields = (schema?.sections || []).flatMap((s) => s.fields || [])
-  const displayFields = allFields.filter(
-    (f) => !['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER'].includes(f.type)
+  const _displayFields = allFields.filter(
+    (f) => !['SECTION_HEADER', 'PARAGRAPH', 'DIVIDER', 'LABEL', 'SIGNATURE', 'INITIALS'].includes(f.type)
   )
+
+  const signerEmail = signing?.signerEmail || null
 
   const formatValue = (field, val) => {
     if (val == null || val === '') return <span className="text-gray-400 italic">—</span>
@@ -186,6 +321,20 @@ function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, su
         )
       })}
 
+      {/* eSign notice */}
+      {hasSignature && (
+        <div className="flex items-start gap-3 bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm text-purple-800">
+          <span className="text-xl flex-shrink-0">✍️</span>
+          <div>
+            <strong>This form requires an electronic signature.</strong>
+            <p className="text-xs text-purple-600 mt-1">
+              After submission and review, a DocuSign signing request will be sent
+              {signerEmail ? <> to <strong>{signerEmail}</strong></> : ' to the signer'}.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex items-center justify-between pt-2">
         <button
@@ -207,6 +356,8 @@ function ReviewStep({ schema, formData, selectedParty, partyContext, formKey, su
         >
           {submitMutation.isPending ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</>
+          ) : hasSignature ? (
+            <><Send className="w-4 h-4" /> Submit & Send for Signature</>
           ) : (
             <><Send className="w-4 h-4" /> Confirm & Submit</>
           )}
@@ -232,11 +383,13 @@ export default function FormFillPage() {
   const [step,          setStep]          = useState(caseId ? 1 : 0)   // skip party step if case context provides it
   const [selectedParty, setSelectedParty] = useState(null)
   const [filledData,    setFilledData]    = useState({})  // captured from FormRenderer on review
+  const [signing,       setSigning]       = useState({ signerName: '', signerEmail: '', emailSubject: '', emailBody: '' })
 
   const { data: formDef, isLoading: schemaLoading, error: schemaError } = useFormSchema(formKey)
   const { data: existingSubmission, isLoading: submissionLoading }      = useSubmission(submissionId)
 
   const isLoading = schemaLoading || (submissionId && submissionLoading)
+  const hasSignature = !!formDef?.docuSignConfig?.requiresSignature
 
   // Called after the final API submit in step 2
   const handleSubmitSuccess = () => {
@@ -248,7 +401,8 @@ export default function FormFillPage() {
     }
   }
 
-  // Called by FormRenderer when all fields are valid — advance to review step
+  // Called by FormRenderer when all fields are valid — advance to Signing
+  // (if required) or straight to Review.
   const handleReview = (data) => {
     setFilledData(data)
     setStep(2)
@@ -325,7 +479,9 @@ export default function FormFillPage() {
         <div className="mb-6">
           <StepIndicator
             current={step}
-            steps={['Select Party', 'Fill Form', 'Review & Submit']}
+            steps={hasSignature
+              ? ['Select Party', 'Fill Form', 'Sign', 'Review & Submit']
+              : ['Select Party', 'Fill Form', 'Review & Submit']}
           />
         </div>
 
@@ -372,8 +528,19 @@ export default function FormFillPage() {
             </div>
           )}
 
-          {/* Step 2: Review & submit */}
-          {step === 2 && (
+          {/* Step 2: Signing details (only when the form requires signature) */}
+          {step === 2 && hasSignature && (
+            <SigningStep
+              formName={name}
+              signing={signing}
+              setSigning={setSigning}
+              onBack={() => setStep(1)}
+              onNext={() => setStep(3)}
+            />
+          )}
+
+          {/* Review & submit — step 2 if no signature required, step 3 if it is */}
+          {((step === 2 && !hasSignature) || (step === 3 && hasSignature)) && (
             <ReviewStep
               schema={schema}
               formData={filledData}
@@ -383,7 +550,9 @@ export default function FormFillPage() {
               submissionId={submissionId}
               caseId={caseId}
               checklistItemId={checklistItemId}
-              onBack={() => setStep(1)}
+              hasSignature={hasSignature}
+              signing={signing}
+              onBack={() => setStep(hasSignature ? 2 : 1)}
               onSuccess={handleSubmitSuccess}   /* ← navigate after API call */
             />
           )}

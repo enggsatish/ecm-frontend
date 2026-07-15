@@ -63,14 +63,14 @@ function ExternalUploads({ sessionToken, uploads, onUploaded }) {
         </h2>
       </div>
 
-      {/* Upload area */}
-      <div className="px-5 py-4 border-b border-gray-50">
-        <div className="flex gap-2">
+      {/* Upload area — stacks on mobile */}
+      <div className="px-4 md:px-5 py-4 border-b border-gray-50">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input value={description} onChange={e => setDescription(e.target.value)}
             placeholder="Description (optional)"
-            className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <label className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg cursor-pointer transition-colors
-            ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-green-600 text-white hover:bg-green-700'}`}>
+            className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <label className={`flex items-center justify-center gap-1.5 px-4 py-2.5 min-h-[44px] text-sm font-medium rounded-lg cursor-pointer transition-colors
+            ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'}`}>
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
             {uploading ? 'Uploading...' : 'Upload File'}
             <input type="file" className="hidden" onChange={handleUpload} disabled={uploading}
@@ -142,8 +142,8 @@ function ExternalComments({ sessionToken }) {
           {sent && <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={10} /> Comment sent</p>}
           {!sent && <div />}
           <button onClick={handleSubmit} disabled={!comment.trim() || sending}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600
-                       rounded-lg hover:bg-blue-700 disabled:opacity-50">
+            className="flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] text-sm font-medium text-white bg-blue-600
+                       rounded-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50">
             {sending ? <Loader2 size={14} className="animate-spin" /> : <MessageSquare size={14} />}
             Send Comment
           </button>
@@ -233,8 +233,8 @@ export default function ExternalCasePage() {
             </div>
             {error && <p className="text-xs text-red-500">{error}</p>}
             <button onClick={handleRequestOtp} disabled={!email || loading}
-              className="w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg
-                         hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
+              className="w-full py-3 min-h-[48px] bg-blue-600 text-white text-sm font-medium rounded-lg
+                         hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 flex items-center justify-center gap-2">
               {loading ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
               Send Verification Code
             </button>
@@ -267,8 +267,8 @@ export default function ExternalCasePage() {
                          rounded-lg py-3 focus:outline-none focus:ring-2 focus:ring-green-500" />
             {error && <p className="text-xs text-red-500">{error}</p>}
             <button onClick={handleVerifyOtp} disabled={otp.length !== 6 || loading}
-              className="w-full py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg
-                         hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
+              className="w-full py-3 min-h-[48px] bg-green-600 text-white text-sm font-medium rounded-lg
+                         hover:bg-green-700 active:bg-green-800 disabled:opacity-50 flex items-center justify-center gap-2">
               {loading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
               Verify & Access
             </button>
@@ -286,11 +286,11 @@ export default function ExternalCasePage() {
   const cv = caseView
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+      {/* Header — stacks vertically on mobile */}
+      <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 md:py-4">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
               <FolderOpen size={18} className="text-blue-600" />
             </div>
             <div>
@@ -298,8 +298,8 @@ export default function ExternalCasePage() {
               <p className="text-xs text-gray-400">{cv?.customerName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_COLORS[cv?.caseStatus] ?? 'bg-gray-100 text-gray-500'}`}>
+          <div className="flex items-center gap-2 sm:gap-3 ml-12 sm:ml-0">
+            <span className={`text-[10px] sm:text-xs font-medium px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full ${STATUS_COLORS[cv?.caseStatus] ?? 'bg-gray-100 text-gray-500'}`}>
               {cv?.caseStatus?.replace(/_/g, ' ')}
             </span>
             <div className="text-right">
@@ -310,7 +310,7 @@ export default function ExternalCasePage() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="max-w-4xl mx-auto px-3 py-4 md:p-6 space-y-4 md:space-y-6">
         {/* Shared documents */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
@@ -326,23 +326,27 @@ export default function ExternalCasePage() {
           ) : (
             <div className="divide-y divide-gray-50">
               {cv.sharedDocuments.map(doc => (
-                <div key={doc.caseDocumentId} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50">
-                  <FileText size={14} className="text-gray-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-700">{doc.documentTypeName}</p>
-                    {doc.documentName && <p className="text-xs text-gray-400 truncate">{doc.documentName}</p>}
+                <div key={doc.caseDocumentId} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 md:px-5 py-3 hover:bg-gray-50">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <FileText size={14} className="text-gray-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-700">{doc.documentTypeName}</p>
+                      {doc.documentName && <p className="text-xs text-gray-400 truncate">{doc.documentName}</p>}
+                    </div>
                   </div>
-                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                    doc.status === 'APPROVED' ? 'bg-green-50 text-green-600' :
-                    doc.status === 'UPLOADED' ? 'bg-blue-50 text-blue-600' :
-                    'bg-gray-100 text-gray-500'
-                  }`}>{doc.status}</span>
-                  {doc.documentId && (
-                    <a href={`/api/documents/${doc.documentId}/download`} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100">
-                      <Download size={11} /> Download
-                    </a>
-                  )}
+                  <div className="flex items-center gap-2 ml-7 sm:ml-0">
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                      doc.status === 'APPROVED' ? 'bg-green-50 text-green-600' :
+                      doc.status === 'UPLOADED' ? 'bg-blue-50 text-blue-600' :
+                      'bg-gray-100 text-gray-500'
+                    }`}>{doc.status}</span>
+                    {doc.documentId && (
+                      <a href={`/api/documents/${doc.documentId}/download`} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1 px-3 py-1.5 min-h-[36px] text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 active:bg-blue-200">
+                        <Download size={11} /> Download
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

@@ -8,6 +8,7 @@ import {
   Layers, GitBranch, ShieldCheck, Link2,
   Bell, Shield, ScanLine, UserCircle, Briefcase,
   Cog, UserCog, Network, PanelLeftClose, PanelLeftOpen,
+  ClipboardCheck, Brain,
 } from 'lucide-react'
 import { useQuery }     from '@tanstack/react-query'
 import useUserStore     from '../../store/userStore'
@@ -51,23 +52,19 @@ const ADMIN_GROUPS = [
   {
     key: 'processing', label: 'Processing', icon: Cog,
     children: [
-      { path: '/admin/ocr-templates',  label: 'OCR Templates',      icon: ScanLine, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/ocr-pipeline',    label: 'OCR Pipeline',       icon: Brain,    roles: ROLE_GROUPS.ADMIN_OR_SUPER },
       { path: '/admin/retention',       label: 'Retention Policies', icon: Archive,  roles: ROLE_GROUPS.ADMIN_OR_SUPER },
       { path: '/admin/notifications',   label: 'Notifications',      icon: Bell,     roles: ROLE_GROUPS.ADMIN_OR_SUPER },
       { path: '/admin/email-templates', label: 'Email Templates',    icon: Bell,     roles: ROLE_GROUPS.ADMIN_OR_SUPER },
-    ],
-  },
-  {
-    key: 'integrations', label: 'Integrations', icon: Network,
-    children: [
-      { path: '/admin/integrations/docusign', label: 'DocuSign', icon: Link2, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/batch-settings',  label: 'Batch Settings',     icon: Layers,   roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
   {
     key: 'system', label: 'System', icon: Settings,
     children: [
-      { path: '/admin/settings',  label: 'Settings',  icon: Settings,    roles: ROLE_GROUPS.SUPER_ONLY },
-      { path: '/admin/audit',     label: 'Audit Log', icon: ShieldCheck, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/settings',     label: 'Settings',     icon: Settings,    roles: ROLE_GROUPS.SUPER_ONLY },
+      { path: '/admin/integrations', label: 'Integrations', icon: Network,     roles: ROLE_GROUPS.SUPER_ONLY },
+      { path: '/admin/audit',        label: 'Audit Log',    icon: ShieldCheck, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
 ]
@@ -82,10 +79,6 @@ const NAV_ITEMS = [
     roles: ROLE_GROUPS.ALL,
   },
   {
-    path: '/backoffice/queue', icon: Inbox, label: 'Review Queue',
-    roles: ROLE_GROUPS.OPERATIONS,
-  },
-  {
     path: '/documents', icon: FolderOpen, label: 'Documents',
     roles: ROLE_GROUPS.ALL,
   },
@@ -97,6 +90,17 @@ const NAV_ITEMS = [
     path: '/workflow', icon: CheckSquare, label: 'SLA Dashboard',
     roles: ROLE_GROUPS.OPERATIONS,
     exact: true,
+  },
+  {
+    path: '/review', icon: ClipboardCheck, label: 'Review & Tasks',
+    isGroup: true, groupKey: 'review',
+    roles: ROLE_GROUPS.OPERATIONS,
+    children: [
+      { path: '/review/documents',        label: 'Document Review',      icon: Inbox,          roles: ROLE_GROUPS.OPERATIONS },
+      { path: '/review/classification',   label: 'Classification Queue', icon: ScanLine,       roles: ROLE_GROUPS.OPERATIONS },
+      { path: '/review/spot-check',       label: 'Spot Check',           icon: Shield,         roles: ROLE_GROUPS.OPERATIONS },
+      { path: '/batch/jobs',              label: 'Batch Jobs',           icon: Layers,         roles: ROLE_GROUPS.OPERATIONS },
+    ],
   },
   {
     path: '/eforms', icon: ClipboardList, label: 'eForms',
@@ -142,7 +146,7 @@ function SidebarBadge({ count, collapsed }) {
   )
 }
 
-export default function Sidebar() {
+export default function Sidebar({ forcedExpanded = false, onNavClick }) {
   const { user }     = useUserStore()
   const location     = useLocation()
   const { sidebarCollapsed, toggleSidebar } = useUiStore()
@@ -165,21 +169,29 @@ export default function Sidebar() {
 
   const isInEForms = location.pathname.startsWith('/eforms')
   const isInAdmin  = location.pathname.startsWith('/admin')
+  const isInReview = location.pathname.startsWith('/review')
+      || location.pathname.startsWith('/batch')
 
   const [eformsOpen, setEformsOpen] = useState(isInEForms)
   const [adminOpen,  setAdminOpen]  = useState(isInAdmin)
+  const [reviewOpen, setReviewOpen] = useState(isInReview)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (isInEForms) setEformsOpen(true) }, [isInEForms])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (isInAdmin)  setAdminOpen(true)  }, [isInAdmin])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (isInReview) setReviewOpen(true) }, [isInReview])
 
   const visibleItems = NAV_ITEMS.filter(item => hasRole(user?.roles, item.roles))
 
   const groupState = {
     eforms: { isOpen: eformsOpen, onToggle: () => setEformsOpen(v => !v) },
     admin:  { isOpen: adminOpen,  onToggle: () => setAdminOpen(v => !v)  },
+    review: { isOpen: reviewOpen, onToggle: () => setReviewOpen(v => !v) },
   }
 
-  const collapsed = sidebarCollapsed
+  const collapsed = forcedExpanded ? false : sidebarCollapsed
 
   return (
     <div className="relative flex-shrink-0" style={{ zIndex: 20 }}>
@@ -220,7 +232,8 @@ export default function Sidebar() {
       </div>
 
       {/* ── Navigation ───────────────────────────────────────── */}
-      <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-3'}`}>
+      <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-3'}`}
+        onClick={(e) => { if (onNavClick && e.target.closest('a')) onNavClick() }}>
         {visibleItems.map((item) => {
           if (item.isGroup && !collapsed) {
             const { isOpen, onToggle } = groupState[item.groupKey] ?? {}
@@ -237,7 +250,7 @@ export default function Sidebar() {
           }
 
           const Icon = item.icon
-          const isActive = item.exact
+          const _isActive = item.exact
             ? location.pathname === item.path
             : location.pathname.startsWith(item.path)
 
@@ -346,7 +359,8 @@ export default function Sidebar() {
 // ─── Collapsible nav group ────────────────────────────────────────────────────
 function NavGroup({ item, userRoles, isOpen, onToggle, currentPath }) {
   const Icon = item.icon
-  const isGroupActive = currentPath.startsWith(item.path)
+  const isGroupActive = currentPath.startsWith(item.path) ||
+    (item.children || []).some(c => currentPath === c.path || currentPath.startsWith(c.path + '/'))
 
   const visibleChildren = (item.children || []).filter(child =>
     hasRole(userRoles, child.roles)
@@ -427,6 +441,7 @@ function SubGroup({ group, userRoles, currentPath }) {
 
   const [open, setOpen] = useState(hasActiveChild)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (hasActiveChild) setOpen(true) }, [hasActiveChild])
 
   if (visibleChildren.length === 0) return null

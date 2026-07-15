@@ -28,6 +28,9 @@ export const getDocumentWorkflows = (documentId) =>
 export const getWorkflowInstance = (id) =>
   apiClient.get(`/api/workflow/instances/${id}`).then(unwrap)
 
+export const getWorkflowRuntimeState = (id) =>
+  apiClient.get(`/api/workflow/instances/${id}/runtime-state`).then(unwrap)
+
 export const cancelWorkflow = (id) =>
   apiClient.delete(`/api/workflow/instances/${id}`).then(unwrap)
 
@@ -172,7 +175,7 @@ export const updateWorkflowDefinition = (id, payload) =>
 // -- SLA ----------------------------------------------------------------------
 
 export const getSlaSummary = () =>
-  apiClient.get('/api/workflow/sla/summary').then(r => r.data ?? {})
+  apiClient.get('/api/workflow/sla/summary').then(unwrap)
 
 export const getSlaOverdue = () =>
-  apiClient.get('/api/workflow/sla/overdue').then(r => r.data ?? [])
+  apiClient.get('/api/workflow/sla/overdue').then(unwrap)

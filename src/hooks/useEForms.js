@@ -13,6 +13,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import * as api from '../api/eformsApi'
+import { getEmailTemplateByKey } from '../api/adminApi'
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 export const eformsKeys = {
@@ -86,6 +87,10 @@ export function usePublishForm() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['eforms', 'definitions'] })
       qc.invalidateQueries({ queryKey: ['eforms', 'published'] })
+      // Prefix match invalidates every cached schema, since we don't know
+      // the formKey here (mutationFn only takes the definition id) — the Fill
+      // page otherwise keeps serving a stale schema for up to staleTime (5min).
+      qc.invalidateQueries({ queryKey: ['eforms', 'schema'] })
       toast.success('Form published successfully')
     },
     onError: (err) => toast.error(err?.message || 'Failed to publish'),
@@ -135,6 +140,16 @@ export function usePublishedForms() {
   return useQuery({
     queryKey: eformsKeys.published(),
     queryFn:  () => api.getPublishedForms(),
+  })
+}
+
+/** Default subject/body for the DocuSign signing-request email (admin-managed,
+ *  overridable per-submission on the fill flow's signing step). */
+export function useDocuSignEmailTemplate() {
+  return useQuery({
+    queryKey: ['notifications', 'email-template', 'DOCUSIGN_SIGNING_REQUEST'],
+    queryFn:  () => getEmailTemplateByKey('DOCUSIGN_SIGNING_REQUEST'),
+    staleTime: 5 * 60 * 1000,
   })
 }
 
@@ -203,5 +218,18 @@ export function useWithdrawSubmission() {
       toast.success('Submission withdrawn')
     },
     onError: (err) => toast.error(err?.message || 'Failed to withdraw'),
+  })
+}
+
+export function useUploadSignedCopy() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, file }) => api.uploadSignedCopy(id, file),
+    onSuccess: (_res, { id }) => {
+      qc.invalidateQueries({ queryKey: eformsKeys.submission(id) })
+      qc.invalidateQueries({ queryKey: eformsKeys.mySubmissions() })
+      toast.success('Signed copy uploaded')
+    },
+    onError: (err) => toast.error(err?.response?.data?.message || 'Upload failed'),
   })
 }

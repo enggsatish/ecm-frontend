@@ -43,6 +43,11 @@ function CategoryNode({ node, depth = 0, flatList, onEdit, onDeactivate, deactiv
         </td>
         <td className="px-4 py-2.5 text-sm text-gray-500 font-mono">{node.code}</td>
         <td className="px-4 py-2.5 text-sm text-gray-500 max-w-xs truncate">{node.description ?? '—'}</td>
+        <td className="px-4 py-2.5 text-xs text-gray-400 max-w-xs truncate font-mono">
+          {Array.isArray(node.classificationKeywords) && node.classificationKeywords.length > 0
+            ? node.classificationKeywords.join(', ')
+            : <span className="text-gray-300">none</span>}
+        </td>
         <td className="px-4 py-2.5">
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
             node.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'
@@ -101,7 +106,7 @@ function SlidePanel({ title, open, onClose, children }) {
   );
 }
 
-const EMPTY = { name: '', code: '', description: '', parentId: '' };
+const EMPTY = { name: '', code: '', description: '', parentId: '', classificationKeywords: '' };
 
 export default function CategoriesPage() {
   const [panelOpen, setPanelOpen] = useState(false);
@@ -120,7 +125,8 @@ export default function CategoriesPage() {
   const openCreate = () => { setEditing(null); setForm(EMPTY); setPanelOpen(true); };
   const openEdit = (node) => {
     setEditing(node);
-    setForm({ name: node.name, code: node.code, description: node.description ?? '', parentId: node.parentId ?? '' });
+    const kw = Array.isArray(node.classificationKeywords) ? node.classificationKeywords.join(', ') : (node.classificationKeywords || '');
+    setForm({ name: node.name, code: node.code, description: node.description ?? '', parentId: node.parentId ?? '', classificationKeywords: kw });
     setPanelOpen(true);
   };
 
@@ -135,11 +141,16 @@ export default function CategoriesPage() {
   const handleSave = async () => {
     if (!form.name.trim() || !form.code.trim()) { toast.error('Name and Code are required'); return; }
     setSaving(true);
+    // Convert comma-separated keywords string to array
+    const keywords = form.classificationKeywords
+      ? form.classificationKeywords.split(',').map(k => k.trim()).filter(k => k)
+      : null;
     const payload = {
       name: form.name.trim(),
       code: form.code.trim().toUpperCase(),
       description: form.description.trim() || null,
       parentId: form.parentId || null,
+      classificationKeywords: keywords,
     };
     const opts = {
       onSuccess: () => { toast.success(editing ? 'Updated' : 'Created'); setPanelOpen(false); },
@@ -177,6 +188,7 @@ export default function CategoriesPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Code</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Keywords</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Actions</th>
               </tr>
@@ -243,6 +255,22 @@ export default function CategoriesPage() {
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Classification Keywords
+              <span className="text-gray-400 font-normal ml-1">(comma-separated)</span>
+            </label>
+            <textarea
+              value={form.classificationKeywords}
+              onChange={e => setForm(f => ({ ...f, classificationKeywords: e.target.value }))}
+              rows={2}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder="e.g. driver, license, licence, passport, expiry, identification"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Used by the OCR pipeline to auto-classify uploaded documents. More keywords = better classification accuracy.
+            </p>
           </div>
           <div className="pt-4 flex gap-3">
             <button

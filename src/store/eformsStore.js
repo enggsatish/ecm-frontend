@@ -32,6 +32,14 @@ const DEFAULT_FORM_META = {
   triggerOnSubmit: true,    // if false, submission never starts a workflow
   slaDays:         5,       // SLA deadline in calendar days from submission
   priority:        'NORMAL', // LOW | NORMAL | HIGH | URGENT
+  // ── DocuSign e-signature ──────────────────────────────────────────────────
+  // Maps to DocuSignFormConfig JSONB (docuSignConfig) on the backend FormDefinition entity.
+  // Signer identity + the signing-request email are entered at fill time, not
+  // here — this is form-level policy only.
+  docusignRequiresSignature: false,
+  docusignExpiryDays:        30,
+  docusignAllowDecline:      false,
+  docusignAllowReassign:     false,
 };
 
 export const useEFormsDesignerStore = create((set, get) => ({
@@ -58,6 +66,7 @@ export const useEFormsDesignerStore = create((set, get) => ({
   // workflowConfig is a JSONB object — destructure into flat meta fields.
   initFromDefinition: (definition) => {
     const wfc = definition.workflowConfig || {};
+    const dsc = definition.docuSignConfig || {};
     set({
       definitionId: definition.id,
       meta: {
@@ -72,6 +81,11 @@ export const useEFormsDesignerStore = create((set, get) => ({
         triggerOnSubmit: wfc.triggerOnSubmit       !== undefined ? wfc.triggerOnSubmit : true,
         slaDays:         wfc.slaDays               ?? 5,
         priority:        wfc.defaultPriority       || 'NORMAL',
+        // DocuSign config fields
+        docusignRequiresSignature: dsc.requiresSignature || false,
+        docusignExpiryDays:        dsc.expiryDays          ?? 30,
+        docusignAllowDecline:      dsc.allowDecline        || false,
+        docusignAllowReassign:     dsc.allowReassign       || false,
       },
       schema: definition.schema || { ...DEFAULT_SCHEMA },
       isDirty: false,
@@ -301,6 +315,14 @@ function buildDefaultField(id, key, type) {
       return { ...base, label: 'Section Header', colSpan: 12 };
     case 'PARAGRAPH':
       return { ...base, label: 'Add descriptive text here...', colSpan: 12 };
+    case 'LABEL':
+      return { ...base, label: 'Label text', colSpan: 4 };
+    case 'SIGNATURE':
+      return { ...base, label: 'Signature', colSpan: 6 };
+    case 'INITIALS':
+      return { ...base, label: 'Initials', colSpan: 3 };
+    case 'SIGNER_EMAIL':
+      return { ...base, label: 'Signer Email', key: 'signerEmail', colSpan: 6 };
     case 'DIVIDER':
       return { ...base, label: '', colSpan: 12 };
     default:
@@ -322,6 +344,10 @@ function fieldTypeLabel(type) {
     CHECKBOX_GROUP: 'Checkbox Group',
     SECTION_HEADER: 'Section Header',
     PARAGRAPH: 'Paragraph',
+    LABEL: 'Label',
+    SIGNATURE: 'Signature',
+    INITIALS: 'Initials',
+    SIGNER_EMAIL: 'Signer Email',
     DIVIDER: 'Divider',
   };
   return map[type] || type;
