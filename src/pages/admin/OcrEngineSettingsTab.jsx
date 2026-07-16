@@ -10,7 +10,7 @@
  */
 import { useState, useEffect } from 'react'
 import { Loader2, Save, GripVertical, CheckCircle, XCircle, Wifi, WifiOff,
-         ChevronDown, ChevronUp, Cpu, Cloud, Zap, AlertTriangle, Plus } from 'lucide-react'
+         ChevronDown, ChevronUp, Cpu, Cloud, Zap, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import apiClient from '../../api/apiClient'
 import { useTenantConfig, useBulkUpdateConfig } from '../../hooks/useAdmin'
@@ -24,7 +24,7 @@ const ENGINE_META = {
     capabilities: ['OCR', 'CLASSIFY', 'EXTRACT_FIELDS'],
     configFields: [
       { key: 'url', label: 'Ollama URL (fallback only)', placeholder: 'http://localhost:11434', type: 'text' },
-      { key: 'model', label: 'Fallback Model Name', placeholder: 'glm-ocr', type: 'text' },
+      { key: 'model', label: 'Fallback Model Name', placeholder: 'glm-ocr', type: 'text', modelOptions: ['glm-ocr'] },
       { key: 'timeout', label: 'Timeout (seconds)', placeholder: '120', type: 'number' },
     ],
     memoryNote: 'Primary path: AI Gateway (configure at Admin → Integrations → AI Gateway). Fallback model is only used if the gateway is disabled or unreachable.',
@@ -35,11 +35,8 @@ const ENGINE_META = {
     icon: Cloud,
     color: 'blue',
     capabilities: ['OCR', 'CLASSIFY', 'EXTRACT_FIELDS'],
-    configFields: [
-      { key: 'endpoint', label: 'Endpoint URL', placeholder: 'https://your-resource.cognitiveservices.azure.com', type: 'text' },
-      { key: 'key', label: 'API Key', placeholder: '', type: 'password' },
-      { key: 'rateLimit', label: 'Rate Limit (req/sec)', placeholder: '1', type: 'number' },
-    ],
+    configFields: [],
+    memoryNote: 'Endpoint, API key, and rate limit are configured once at Admin → Integrations → OCR Engine — shared across every Azure stage in this pipeline, not set per-entry.',
   },
   'llama-text': {
     name: 'Text Classify + Extract (via AI Gateway)',
@@ -49,7 +46,8 @@ const ENGINE_META = {
     capabilities: ['CLASSIFY', 'EXTRACT_FIELDS'],
     configFields: [
       { key: 'url', label: 'Ollama URL (fallback only)', placeholder: 'http://localhost:11434', type: 'text' },
-      { key: 'model', label: 'Fallback Model Name', placeholder: 'llama3.2:3b', type: 'text' },
+      { key: 'model', label: 'Fallback Model Name', placeholder: 'llama3.2:3b', type: 'text',
+        modelOptions: ['llama3.2:3b', 'llama3.2:1b', 'qwen2.5:7b', 'qwen3:8b'] },
       { key: 'timeout', label: 'Timeout (seconds)', placeholder: '60', type: 'number' },
     ],
     memoryNote: 'Primary path: AI Gateway (configure at Admin → Integrations → AI Gateway). Fallback model is only used if the gateway is disabled or unreachable.',
@@ -110,23 +108,27 @@ export default function OcrEngineSettingsTab() {
     setPipeline(DEFAULT_PIPELINE)
   }, [configData])
 
-  const toggleEngine = (engineId) => {
-    setPipeline(prev => prev.map(e =>
-      e.engine === engineId ? { ...e, enabled: !e.enabled } : e
+  // Keyed by index, not engine ID — the same engine can appear more than once
+  // in the pipeline (e.g. "azure" run twice: once generic, once with a
+  // category-specific model once classification is known), so matching by
+  // engine ID would edit every instance of that engine at once.
+  const toggleEngine = (index) => {
+    setPipeline(prev => prev.map((e, i) =>
+      i === index ? { ...e, enabled: !e.enabled } : e
     ))
     setDirty(true)
   }
 
-  const updateConfig = (engineId, key, value) => {
-    setPipeline(prev => prev.map(e =>
-      e.engine === engineId ? { ...e, config: { ...e.config, [key]: value } } : e
+  const updateConfig = (index, key, value) => {
+    setPipeline(prev => prev.map((e, i) =>
+      i === index ? { ...e, config: { ...e.config, [key]: value } } : e
     ))
     setDirty(true)
   }
 
-  const updateMinConfidence = (engineId, value) => {
-    setPipeline(prev => prev.map(e =>
-      e.engine === engineId ? { ...e, minConfidence: parseInt(value) || 0 } : e
+  const updateMinConfidence = (index, value) => {
+    setPipeline(prev => prev.map((e, i) =>
+      i === index ? { ...e, minConfidence: parseInt(value) || 0 } : e
     ))
     setDirty(true)
   }
@@ -142,9 +144,25 @@ export default function OcrEngineSettingsTab() {
     setDirty(true)
   }
 
-  const missingEngines = Object.keys(ENGINE_META).filter(
-    key => !pipeline.some(e => e.engine === key)
-  )
+  const removeEngine = (index) => {
+    setPipeline(prev => {
+      const next = prev.filter((_, i) => i !== index)
+      next.forEach((e, i) => { e.priority = i + 1 })
+      return next
+    })
+    // Indices shift after removal — clear per-index UI state rather than
+    // risk a stale test result / expanded panel landing on the wrong entry.
+    setTestResults({})
+    setTestingEngine(null)
+    setExpandedEngine(null)
+    setDirty(true)
+  }
+
+  // Every engine type stays selectable, even if it's already in the pipeline —
+  // an engine can legitimately run more than once (e.g. Azure generic pass,
+  // then Azure again once the category is known). Each addition is its own
+  // independent entry, edited by position, not by engine name.
+  const addableEngines = Object.keys(ENGINE_META)
 
   const handleAddEngine = () => {
     if (!engineToAdd) return
@@ -176,23 +194,23 @@ export default function OcrEngineSettingsTab() {
     })
   }
 
-  const handleTestConnection = async (engineId) => {
-    const entry = pipeline.find(e => e.engine === engineId)
+  const handleTestConnection = async (index) => {
+    const entry = pipeline[index]
     if (!entry) return
-    setTestingEngine(engineId)
-    setTestResults(prev => ({ ...prev, [engineId]: null }))
+    setTestingEngine(index)
+    setTestResults(prev => ({ ...prev, [index]: null }))
 
     try {
       const res = await apiClient.post('/api/ocr/test-connection', {
-        engine: engineId,
+        engine: entry.engine,
         config: entry.config,
       })
       const result = res.data?.data ?? res.data
-      setTestResults(prev => ({ ...prev, [engineId]: result }))
+      setTestResults(prev => ({ ...prev, [index]: result }))
     } catch (err) {
       setTestResults(prev => ({
         ...prev,
-        [engineId]: { success: false, message: err.response?.data?.message || err.message },
+        [index]: { success: false, message: err.response?.data?.message || err.message },
       }))
     } finally {
       setTestingEngine(null)
@@ -246,9 +264,9 @@ export default function OcrEngineSettingsTab() {
           const meta = ENGINE_META[entry.engine]
           if (!meta) return null
           const Icon = meta.icon
-          const isExpanded = expandedEngine === entry.engine
-          const testResult = testResults[entry.engine]
-          const isTesting = testingEngine === entry.engine
+          const isExpanded = expandedEngine === index
+          const testResult = testResults[index]
+          const isTesting = testingEngine === index
 
           const colorMap = {
             violet: { bg: 'bg-violet-50', border: 'border-violet-200', icon: 'text-violet-600', toggle: 'bg-violet-600' },
@@ -258,7 +276,7 @@ export default function OcrEngineSettingsTab() {
           const colors = colorMap[meta.color] || colorMap.blue
 
           return (
-            <div key={entry.engine}
+            <div key={`${entry.engine}-${index}`}
               className={`rounded-xl border ${entry.enabled ? colors.border : 'border-gray-200'} ${entry.enabled ? 'bg-white' : 'bg-gray-50'} shadow-sm transition-all`}
             >
               {/* Header row */}
@@ -302,16 +320,23 @@ export default function OcrEngineSettingsTab() {
 
                 {/* Enable toggle */}
                 <button
-                  onClick={() => toggleEngine(entry.engine)}
+                  onClick={() => toggleEngine(index)}
                   className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${entry.enabled ? colors.toggle : 'bg-gray-300'}`}
                 >
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${entry.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </button>
 
                 {/* Expand */}
-                <button onClick={() => setExpandedEngine(isExpanded ? null : entry.engine)}
+                <button onClick={() => setExpandedEngine(isExpanded ? null : index)}
                   className="text-gray-400 hover:text-gray-600 cursor-pointer">
                   {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+
+                {/* Remove */}
+                <button onClick={() => removeEngine(index)}
+                  title="Remove this pipeline entry"
+                  className="text-gray-300 hover:text-red-500 cursor-pointer">
+                  <Trash2 size={16} />
                 </button>
               </div>
 
@@ -319,18 +344,27 @@ export default function OcrEngineSettingsTab() {
               {isExpanded && (
                 <div className="px-4 pb-4 pt-1 border-t border-gray-100">
                   <div className="grid grid-cols-2 gap-3 mt-3">
-                    {meta.configFields.map(field => (
-                      <div key={field.key}>
-                        <label className="text-xs font-medium text-gray-600 mb-1 block">{field.label}</label>
-                        <input
-                          type={field.type}
-                          value={entry.config?.[field.key] || ''}
-                          onChange={e => updateConfig(entry.engine, field.key, e.target.value)}
-                          placeholder={field.placeholder}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    ))}
+                    {meta.configFields.map(field => {
+                      const listId = field.modelOptions ? `model-options-${entry.engine}` : undefined
+                      return (
+                        <div key={field.key}>
+                          <label className="text-xs font-medium text-gray-600 mb-1 block">{field.label}</label>
+                          <input
+                            type={field.type}
+                            value={entry.config?.[field.key] || ''}
+                            onChange={e => updateConfig(index, field.key, e.target.value)}
+                            placeholder={field.placeholder}
+                            list={listId}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          {field.modelOptions && (
+                            <datalist id={listId}>
+                              {field.modelOptions.map(opt => <option key={opt} value={opt} />)}
+                            </datalist>
+                          )}
+                        </div>
+                      )
+                    })}
 
                     {/* Min confidence (only for engines that classify) */}
                     {meta.capabilities.includes('CLASSIFY') && (
@@ -342,7 +376,7 @@ export default function OcrEngineSettingsTab() {
                           type="number"
                           min="0" max="100"
                           value={entry.minConfidence}
-                          onChange={e => updateMinConfidence(entry.engine, e.target.value)}
+                          onChange={e => updateMinConfidence(index, e.target.value)}
                           className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <p className="text-[10px] text-gray-400 mt-0.5">
@@ -362,7 +396,7 @@ export default function OcrEngineSettingsTab() {
                   {/* Test connection */}
                   <div className="mt-3 flex items-center gap-3">
                     <button
-                      onClick={() => handleTestConnection(entry.engine)}
+                      onClick={() => handleTestConnection(index)}
                       disabled={isTesting}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
                     >
@@ -386,29 +420,33 @@ export default function OcrEngineSettingsTab() {
         })}
       </div>
 
-      {/* Add engine */}
-      {missingEngines.length > 0 && (
-        <div className="flex items-center gap-2 p-3 bg-gray-50 border border-dashed border-gray-300 rounded-xl">
-          <select
-            value={engineToAdd}
-            onChange={e => setEngineToAdd(e.target.value)}
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select an engine to add…</option>
-            {missingEngines.map(key => (
-              <option key={key} value={key}>{ENGINE_META[key].name}</option>
-            ))}
-          </select>
-          <button
-            onClick={handleAddEngine}
-            disabled={!engineToAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-700 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            <Plus size={14} />
-            Add Engine
-          </button>
-        </div>
-      )}
+      {/* Add engine — engines can be added more than once (e.g. Azure run
+          twice: once generic, once with a category-specific model) */}
+      <div className="flex items-center gap-2 p-3 bg-gray-50 border border-dashed border-gray-300 rounded-xl">
+        <select
+          value={engineToAdd}
+          onChange={e => setEngineToAdd(e.target.value)}
+          className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Select an engine to add…</option>
+          {addableEngines.map(key => {
+            const count = pipeline.filter(e => e.engine === key).length
+            return (
+              <option key={key} value={key}>
+                {ENGINE_META[key].name}{count > 0 ? ` (already added ${count}×)` : ''}
+              </option>
+            )
+          })}
+        </select>
+        <button
+          onClick={handleAddEngine}
+          disabled={!engineToAdd}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-700 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        >
+          <Plus size={14} />
+          Add Engine
+        </button>
+      </div>
 
       {/* Unsaved changes */}
       {dirty && (
