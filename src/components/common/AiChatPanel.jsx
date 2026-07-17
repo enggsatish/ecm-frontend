@@ -49,7 +49,16 @@ export default function AiChatPanel() {
 
   const sendMessageSync = useCallback(async (userMsg) => {
     try {
-      const res = await apiClient.post('/api/ai/chat', { message: userMsg, model })
+      // Derive the request timeout from this model's configured timeout_sec
+      // (set in AI Gateway admin) rather than the shared apiClient's 30s
+      // default, which has no relationship to actual model response times.
+      // +15s buffer covers proxy overhead beyond the gateway's own wait on
+      // the LLM provider. Falls back to apiClient's default if unset.
+      const selected = models.find(m => m.name === model)
+      const timeoutSec = selected?.timeout_sec ?? selected?.timeoutSec
+      const reqConfig = timeoutSec ? { timeout: (timeoutSec + 15) * 1000 } : {}
+
+      const res = await apiClient.post('/api/ai/chat', { message: userMsg, model }, reqConfig)
       const data = res.data?.data ?? res.data
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -60,7 +69,7 @@ export default function AiChatPanel() {
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', text: 'Error: ' + err.message, error: true }])
     }
-  }, [model])
+  }, [model, models])
 
   const sendMessageStream = useCallback(async (userMsg) => {
     // Use fetch directly for streaming — axios doesn't support ReadableStream
