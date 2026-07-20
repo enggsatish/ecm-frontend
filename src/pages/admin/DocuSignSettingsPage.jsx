@@ -80,7 +80,7 @@ function SecretInput({ label, fieldKey, form, onChange }) {
 }
 
 function TestStatusBadge({ status, testedAt }) {
-  if (!status) return null
+  if (!status || status === 'UNTESTED') return null
   const ok = status === 'OK'
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium

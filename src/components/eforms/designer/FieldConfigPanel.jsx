@@ -3,8 +3,10 @@
  * Right panel shown when a field is selected in the designer.
  * Allows editing label, key, required, colSpan, placeholder, options, validation.
  */
-import { X, Plus, Trash2, GripVertical, CircleX } from 'lucide-react';
+import { X, Plus, Trash2, GripVertical, CircleX, UserCog } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useEFormsDesignerStore } from '../../../store/eformsStore';
+import { listProfileAttributes } from '../../../api/adminApi';
 
 const COL_SPANS = [
   { value: 3, label: '25%' },
@@ -22,6 +24,14 @@ const DISPLAY_ONLY = ['SECTION_HEADER', 'PARAGRAPH', 'LABEL', 'DIVIDER', 'SIGNAT
 export default function FieldConfigPanel({ style }) {
   const { getSelectedField, updateField, removeField, clearSelection } = useEFormsDesignerStore();
   const selected = getSelectedField();
+
+  // Profile attributes for "Auto-populate from" — CRM-aware form fill.
+  // Cheap enough to always fetch; only rendered when a bindable field is selected.
+  const { data: profileAttributes = [] } = useQuery({
+    queryKey: ['admin', 'customer-profile-schema', 'attributes'],
+    queryFn: listProfileAttributes,
+    staleTime: 5 * 60_000,
+  });
 
   if (!selected) {
     return (
@@ -174,6 +184,28 @@ export default function FieldConfigPanel({ style }) {
               className={inputCls}
               placeholder="Optional hint"
             />
+          </Field>
+        )}
+
+        {/* Auto-populate from customer profile — CRM-aware form fill */}
+        {HAS_PLACEHOLDER.includes(field.type) && (
+          <Field label="Auto-populate from" hint="optional">
+            <select
+              value={field.customerAttributeKey || ''}
+              onChange={(e) => update({ customerAttributeKey: e.target.value || null })}
+              className={inputCls}
+            >
+              <option value="">Not bound — filled in manually</option>
+              {profileAttributes.map((a) => (
+                <option key={a.key} value={a.key}>{a.label}</option>
+              ))}
+            </select>
+            {field.customerAttributeKey && (
+              <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
+                <UserCog className="w-3 h-3" />
+                Pre-fills from the customer's profile when opened from Customer 360 — still editable
+              </p>
+            )}
           </Field>
         )}
 

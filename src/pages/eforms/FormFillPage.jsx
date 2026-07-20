@@ -9,13 +9,15 @@
  *   Step 2 — Signing details (signer name/email + editable signing-request email) — conditional
  *   Step 2 or 3 — Review & Submit (read-only summary + final submit to API)
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft, ArrowRight, Building2, Send,
   Loader2, AlertCircle, CheckCircle2, Users, FileText, PenTool,
 } from 'lucide-react'
 import { useFormSchema, useSubmission, useSubmitForm, useDocuSignEmailTemplate } from '../../hooks/useEForms'
+import { getCustomerCrmProfile } from '../../api/adminApi'
 import toast from 'react-hot-toast'
 import FormRenderer from '../../components/eforms/renderer/FormRenderer'
 import PartySearch from '../../components/common/PartySearch'
@@ -395,11 +397,41 @@ export default function FormFillPage() {
   const handleSubmitSuccess = () => {
     if (caseId) {
       toast.success('Form submitted — it will appear in the case checklist after approval')
-      navigate('/cases')
+      navigate(`/cases/${caseId}`)
     } else {
       navigate('/eforms/submissions/mine')
     }
   }
+
+  // ── CRM-aware prefill ──────────────────────────────────────────────────────
+  // Accepts either the selected party's internal UUID or the external ref
+  // carried in the URL from a case-checklist "Fill Form" link — getCustomerCrmProfile
+  // resolves either. Only fetched once we actually know who the customer is.
+  const crmProfileId = selectedParty?.id || partyRef
+  const { data: crmProfile, isFetching: crmProfileFetching } = useQuery({
+    queryKey: ['crm-profile-prefill', crmProfileId],
+    queryFn: () => getCustomerCrmProfile(crmProfileId),
+    enabled: !!crmProfileId,
+    staleTime: 60_000,
+    retry: false, // don't hammer Salesforce if it's down — form still works blank
+  })
+
+  // Fields with a customerAttributeKey binding get their initial value from
+  // the profile — still fully editable, never overrides a real value below.
+  const profileDefaults = useMemo(() => {
+    if (!crmProfile) return {}
+    const schemaForDefaults = formDef?.schema || formDef
+    const profileMap = Object.fromEntries(crmProfile.profile.map(a => [a.key, a.value]))
+    const defaults = {}
+    for (const section of schemaForDefaults?.sections ?? []) {
+      for (const field of section.fields ?? []) {
+        if (field.customerAttributeKey && profileMap[field.customerAttributeKey] != null) {
+          defaults[field.key] = profileMap[field.customerAttributeKey]
+        }
+      }
+    }
+    return defaults
+  }, [crmProfile, formDef])
 
   // Called by FormRenderer when all fields are valid — advance to Signing
   // (if required) or straight to Review.
@@ -515,16 +547,25 @@ export default function FormFillPage() {
                 </div>
               )}
 
-              <FormRenderer
-                schema={schema}
-                formKey={formKey}
-                definitionId={defId}
-                initialData={existingSubmission?.submissionData ?? filledData}
-                submissionId={submissionId}
-                partyContext={partyContext}
-                onReview={handleReview}          /* ← validated data → step 2 */
-                onBack={() => setStep(0)}
-              />
+              {crmProfileId && crmProfileFetching ? (
+                // FormRenderer only reads initialData once, on mount — wait for the
+                // prefill fetch to settle first rather than mounting it blank and
+                // silently missing the profile data when it arrives a moment later.
+                <div className="flex items-center justify-center py-12 text-gray-400">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading customer details…
+                </div>
+              ) : (
+                <FormRenderer
+                  schema={schema}
+                  formKey={formKey}
+                  definitionId={defId}
+                  initialData={{ ...profileDefaults, ...(existingSubmission?.submissionData ?? filledData) }}
+                  submissionId={submissionId}
+                  partyContext={partyContext}
+                  onReview={handleReview}          /* ← validated data → step 2 */
+                  onBack={() => setStep(0)}
+                />
+              )}
             </div>
           )}
 

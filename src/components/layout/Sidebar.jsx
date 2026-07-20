@@ -38,6 +38,7 @@ const ADMIN_GROUPS = [
     key: 'customers', label: 'Customers', icon: UserCircle,
     children: [
       { path: '/admin/customers',    label: 'Customer Management', icon: UserCircle, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { path: '/admin/customer-schema', label: 'Customer Schema', icon: Layers, roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
   {

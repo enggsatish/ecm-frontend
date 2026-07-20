@@ -196,6 +196,58 @@ export const saveDocuSignConfig = (payload) =>
 export const testDocuSignConnection = () =>
   api.post('/api/admin/integrations/docusign/test').then(unwrap);
 
+// ── Salesforce Integration Config ──────────────────────────────────────────
+export const getSalesforceConfig = () =>
+  api.get('/api/admin/integrations/salesforce').then(unwrap);
+
+export const saveSalesforceConfig = (payload) =>
+  api.put('/api/admin/integrations/salesforce', payload).then(unwrap);
+
+export const testSalesforceConnection = () =>
+  api.post('/api/admin/integrations/salesforce/test').then(unwrap);
+
+// ── Customer Profile Schema (CRM-aware form fill) ──────────────────────────
+export const listProfileAttributes = () =>
+  api.get('/api/admin/customer-profile-schema/attributes').then(unwrap);
+
+export const createProfileAttribute = (payload) =>
+  api.post('/api/admin/customer-profile-schema/attributes', payload).then(unwrap);
+
+export const updateProfileAttribute = (id, payload) =>
+  api.put(`/api/admin/customer-profile-schema/attributes/${id}`, payload).then(unwrap);
+
+export const deactivateProfileAttribute = (id) =>
+  api.delete(`/api/admin/customer-profile-schema/attributes/${id}`).then(unwrap);
+
+export const listRelationshipTypes = () =>
+  api.get('/api/admin/customer-profile-schema/relationship-types').then(unwrap);
+
+export const createRelationshipType = (payload) =>
+  api.post('/api/admin/customer-profile-schema/relationship-types', payload).then(unwrap);
+
+export const updateRelationshipType = (id, payload) =>
+  api.put(`/api/admin/customer-profile-schema/relationship-types/${id}`, payload).then(unwrap);
+
+export const deactivateRelationshipType = (id) =>
+  api.delete(`/api/admin/customer-profile-schema/relationship-types/${id}`).then(unwrap);
+
+export const addRelationshipAttribute = (typeId, payload) =>
+  api.post(`/api/admin/customer-profile-schema/relationship-types/${typeId}/attributes`, payload).then(unwrap);
+
+export const removeRelationshipAttribute = (typeId, attributeId) =>
+  api.delete(`/api/admin/customer-profile-schema/relationship-types/${typeId}/attributes/${attributeId}`).then(unwrap);
+
+// ── Customer CRM Profile (Customer 360 / form prefill) ─────────────────────
+export const getCustomerCrmProfile = (customerId) =>
+  api.get(`/api/admin/customers/${customerId}/crm-profile`).then(unwrap);
+
+export const setCustomerCrmProfileValue = (customerId, attributeKey, value) =>
+  api.put(`/api/admin/customers/${customerId}/crm-profile/${attributeKey}`, { value }).then(unwrap);
+
+// ── Case checklist grouped by category (Customer 360) ──────────────────────
+export const getCaseChecklistGrouped = (caseId) =>
+  api.get(`/api/admin/cases/${caseId}/checklist/grouped`).then(unwrap);
+
 // ── Roles & Permissions (Sprint G) ────────────────────────────────────────
 
 /** GET /api/admin/roles — list all roles with permission counts */

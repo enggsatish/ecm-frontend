@@ -14,6 +14,7 @@ import apiClient from '../../api/apiClient'
 
 // Lazy load the DocuSign settings (reuse existing page as a component)
 const DocuSignSettings = lazy(() => import('./DocuSignSettingsPage'))
+const SalesforceSettings = lazy(() => import('./SalesforceSettingsPage'))
 
 // ── OCR Engine Tab ───────────────────────────────────────────────────────────
 function OcrEngineTab() {
@@ -659,6 +660,7 @@ function AiGatewayTab() {
 // ── Main Page ────────────────────────────────────────────────────────────────
 const INTEGRATION_TABS = [
   { key: 'docusign',   label: 'DocuSign',    icon: Link2 },
+  { key: 'salesforce', label: 'Salesforce',  icon: Cloud },
   { key: 'ocr',        label: 'OCR Engine',  icon: Scan },
   { key: 'ai-gateway', label: 'AI Gateway',  icon: Bot },
 ]
@@ -687,6 +689,12 @@ export default function IntegrationsPage() {
       {activeTab === 'docusign' && (
         <Suspense fallback={<div className="flex justify-center py-16"><Loader2 className="animate-spin text-gray-400" /></div>}>
           <DocuSignSettings />
+        </Suspense>
+      )}
+
+      {activeTab === 'salesforce' && (
+        <Suspense fallback={<div className="flex justify-center py-16"><Loader2 className="animate-spin text-gray-400" /></div>}>
+          <SalesforceSettings />
         </Suspense>
       )}
 

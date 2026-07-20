@@ -27,6 +27,7 @@ const ProductsPage           = lazy(() => import('./pages/admin/ProductsPage'))
 const RetentionPage          = lazy(() => import('./pages/admin/RetentionPage'))
 const TenantSettingsPage     = lazy(() => import('./pages/admin/TenantSettingsPage'))
 const CustomerManagementPage = lazy(() => import('./pages/admin/CustomerManagementPage'))
+const CustomerSchemaPage    = lazy(() => import('./pages/admin/CustomerSchemaPage'))
 const SegmentsPage           = lazy(() => import('./pages/admin/SegmentsPage'))
 const ProductLinesPage       = lazy(() => import('./pages/admin/ProductLinesPage'))
 const AuditLogPage           = lazy(() => import('./pages/admin/AuditLogPage'))
@@ -36,6 +37,7 @@ const IntegrationsPage      = lazy(() => import('./pages/admin/IntegrationsPage'
 const NotificationPreferencesPage = lazy(() => import('./pages/admin/NotificationPreferencesPage'))
 const EmailTemplatesPage = lazy(() => import('./pages/admin/EmailTemplatesPage'))
 const CustomerPortfolioPage = lazy(() => import('./pages/admin/CustomerPortfolioPage'))
+const CustomerDetailPage    = lazy(() => import('./pages/customers/CustomerDetailPage'))
 const OcrPipelineConfigPage = lazy(() => import('./pages/admin/OcrPipelineConfigPage'))
 
 // ── eForms pages ─────────────────────────────────────────────────────────────
@@ -152,6 +154,11 @@ function AppRoutes() {
                 <CustomerPortfolioPage />
               </RoleGuard>
             } />
+            <Route path="/customers/:id" element={
+              <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
+                <CustomerDetailPage />
+              </RoleGuard>
+            } />
 
             <Route path="/cases" element={
               <RoleGuard roles={ROLE_GROUPS.OPERATIONS}>
@@ -212,6 +219,7 @@ function AppRoutes() {
               <Route path="categories"    element={<CategoriesPage />} />
               <Route path="products"      element={<ProductsPage />} />
               <Route path="customers"     element={<CustomerManagementPage />} />
+              <Route path="customer-schema" element={<CustomerSchemaPage />} />
               <Route path="retention"     element={<RetentionPage />} />
               <Route path="settings"      element={<RoleGuard roles={ROLE_GROUPS.SUPER_ONLY}><TenantSettingsPage /></RoleGuard>} />
               <Route path="segments"      element={<SegmentsPage />} />

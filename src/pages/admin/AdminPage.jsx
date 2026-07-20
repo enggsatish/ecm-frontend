@@ -21,6 +21,7 @@ const ADMIN_GROUPS = [
     key: 'customers', label: 'Customers', icon: UserCircle,
     children: [
       { label: 'Customer Management', icon: UserCircle, path: 'customers', roles: ROLE_GROUPS.ADMIN_OR_SUPER },
+      { label: 'Customer Schema',     icon: Layers,      path: 'customer-schema', roles: ROLE_GROUPS.ADMIN_OR_SUPER },
     ],
   },
   {
